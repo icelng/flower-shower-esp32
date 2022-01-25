@@ -1,2 +1,2 @@
-# flower-shower-esp32
-creating a new folder
+# Welcome to Silicon Dreams!
+The dreams is creating...
