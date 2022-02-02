@@ -2,3 +2,5 @@ build/
 sdkconfig*
 .cache
 *.swp
+compile_commands.json
+.clangd
