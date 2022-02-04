@@ -36,7 +36,6 @@
 
 #define PREPARE_BUF_MAX_SIZE 1024
 
-#define PROFILE_NUM 2
 #define PROFILE_A_APP_ID 0
 
 namespace sd {
@@ -225,7 +224,7 @@ void GATTServer::GATTEventHandler(esp_gatts_cb_event_t event, esp_gatt_if_t gatt
                     param->reg.status);
         }
         reg_app_status_ = param->reg.status;
-        xSemaphoreGive(sem_reg_app_done_);
+        xEventGroupSetBits(event_group_, kEGAppRegisterComplete);
 
         // gl_profile_tab[PROFILE_A_APP_ID].service_id.is_primary = true;
         // gl_profile_tab[PROFILE_A_APP_ID].service_id.id.inst_id = 0x00;
@@ -466,13 +465,10 @@ GATTServer::GATTServer(const std::string& device_name) :
     adv_params_.adv_filter_policy  = ADV_FILTER_ALLOW_SCAN_ANY_CON_ANY;
 
     event_group_ = xEventGroupCreate();
-    assert(sem_reg_app_done_ != nullptr);
-    sem_reg_app_done_ = xSemaphoreCreateBinary();
-    assert(sem_reg_app_done_ != nullptr);
+    assert(event_group_ != nullptr);
 }
 
 void GATTServer::CreateService() {
-    vSemaphoreDelete(&sem_reg_app_done_);
     vEventGroupDelete(event_group_);
 }
 
@@ -526,8 +522,8 @@ esp_err_t GATTServer::Init() {
         return ret;
     }
 
-    ret = xSemaphoreTake(sem_reg_app_done_, 3000 / portTICK_PERIOD_MS);
-    if (ret) {
+    auto wait_bits = xEventGroupWaitBits(event_group_, kEGAppRegisterComplete, pdTRUE, pdTRUE, kEGTimeout);
+    if (wait_bits != kEGAppRegisterComplete) {
         ESP_LOGE(GATTS_TAG, "gatts app register timeout, error code = %x", ret);
         return ret;
     }

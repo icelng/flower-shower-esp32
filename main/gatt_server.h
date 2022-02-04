@@ -3,7 +3,6 @@
 #include "esp_gap_ble_api.h"
 #include "esp_gatts_api.h"
 #include "freertos/FreeRTOS.h"
-#include "freertos/semphr.h"
 #include "freertos/event_groups.h"
 
 
@@ -60,14 +59,12 @@ class GATTServer {
     static const EventBits_t kEGAdvConfigDone = (1 << 0);
     static const EventBits_t kEGAdvRspConfigDone = (1 << 1);
     static const EventBits_t kEGAdvStartComplete = (1 << 2);
+    static const EventBits_t kEGAppRegisterComplete = (1 << 3);
 
     EventGroupHandle_t event_group_;
 
-    // semmaphores
     esp_bt_status_t start_adv_status_;
-    SemaphoreHandle_t sem_reg_app_done_;
     esp_gatt_status_t reg_app_status_;
-
 };
 
 }  // namespace sd
