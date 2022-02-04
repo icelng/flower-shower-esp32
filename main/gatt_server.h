@@ -4,6 +4,8 @@
 #include "esp_gatts_api.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include "freertos/event_groups.h"
+
 
 #include <atomic>
 #include <string>
@@ -29,6 +31,9 @@ class GATTServer {
 
   private:
 
+    esp_err_t InitBTStack();
+    esp_err_t StartAdvertising();
+
     uint32_t app_id_;
     std::string device_name_;
 
@@ -50,12 +55,18 @@ class GATTServer {
     uint16_t descr_handle_;
     esp_bt_uuid_t descr_uuid_;
 
+    // event group
+    static const TickType_t kEGTimeout = 3000 / portTICK_PERIOD_MS;
+    static const EventBits_t kEGAdvConfigDone = (1 << 0);
+    static const EventBits_t kEGAdvRspConfigDone = (1 << 1);
+    static const EventBits_t kEGAdvStartComplete = (1 << 2);
 
-    SemaphoreHandle_t sem_adv_started_;
+    EventGroupHandle_t event_group_;
+
+    // semmaphores
     esp_bt_status_t start_adv_status_;
     SemaphoreHandle_t sem_reg_app_done_;
     esp_gatt_status_t reg_app_status_;
-
 
 };
 

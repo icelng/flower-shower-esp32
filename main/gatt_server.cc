@@ -22,7 +22,7 @@
 #include <string>
 #include <vector>
 
-#define GATTS_TAG "GATTS_DEMO"
+#define GATTS_TAG "SILICON_DREAMS"
 
 #define GATTS_SERVICE_UUID_TEST_A   0x00FF
 #define GATTS_CHAR_UUID_TEST_A      0xFF01
@@ -76,25 +76,15 @@ static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param
 void GATTServer::GAPEventHandler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param) {
     switch (event) {
     case ESP_GAP_BLE_ADV_DATA_SET_COMPLETE_EVT:
-        esp_ble_gap_start_advertising(&adv_params_);
-        // adv_config_done &= (~adv_config_flag);
-        // if (adv_config_done == 0){
-        //     esp_ble_gap_start_advertising(&adv_params_);
-        // }
+        xEventGroupSetBits(event_group_, kEGAdvConfigDone);
         break;
     case ESP_GAP_BLE_SCAN_RSP_DATA_SET_COMPLETE_EVT:
-        // adv_config_done &= (~scan_rsp_config_flag);
-        // if (adv_config_done == 0){
-        //     esp_ble_gap_start_advertising(&adv_params_);
-        // }
+        xEventGroupSetBits(event_group_, kEGAdvRspConfigDone);
         break;
     case ESP_GAP_BLE_ADV_START_COMPLETE_EVT:
         //advertising start complete event to indicate advertising start successfully or failed
-        if (param->adv_start_cmpl.status != ESP_BT_STATUS_SUCCESS) {
-            ESP_LOGE(GATTS_TAG, "Advertising start failed\n");
-        }
         start_adv_status_ = param->adv_start_cmpl.status;
-        xSemaphoreGive(sem_adv_started_);
+        xEventGroupSetBits(event_group_, kEGAdvStartComplete);
         break;
     case ESP_GAP_BLE_ADV_STOP_COMPLETE_EVT:
         if (param->adv_stop_cmpl.status != ESP_BT_STATUS_SUCCESS) {
@@ -115,6 +105,55 @@ void GATTServer::GAPEventHandler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_pa
     default:
         break;
     }
+}
+
+esp_err_t GATTServer::StartAdvertising() {
+    esp_err_t ret;
+
+    ret = esp_ble_gap_set_device_name(TEST_DEVICE_NAME);
+    if (ret) {
+        ESP_LOGE(GATTS_TAG, "set device name error, error code = %x", ret);
+        return ret;
+    }
+    
+    ret = esp_ble_gap_register_callback(gap_event_handler);
+    if (ret) {
+        ESP_LOGE(GATTS_TAG, "gap register error, error code = %x", ret);
+        return ret;
+    }
+
+    ret = esp_ble_gap_config_adv_data(&adv_data_);
+    if (ret){
+        ESP_LOGE(GATTS_TAG, "config adv data failed, error code = %x", ret);
+        return ret;
+    }
+    ret = esp_ble_gap_config_adv_data(&scan_rsp_data_);
+    if (ret){
+        ESP_LOGE(GATTS_TAG, "config scan response data failed, error code = %x", ret);
+        return ret;
+    }
+    auto wait_bits = xEventGroupWaitBits(event_group_, kEGAdvConfigDone | kEGAdvRspConfigDone,
+                                    pdTRUE, pdTRUE, kEGTimeout);
+    assert(wait_bits == (kEGAdvConfigDone | kEGAdvRspConfigDone));
+
+    ret = esp_ble_gap_start_advertising(&adv_params_);
+    if (ret){
+        ESP_LOGE(GATTS_TAG, "start advertising failed, error code = %x", ret);
+        return ret;
+    }
+    wait_bits = xEventGroupWaitBits(event_group_, kEGAdvStartComplete, pdTRUE, pdTRUE, kEGTimeout);
+    if (wait_bits != kEGAdvStartComplete) {
+        ESP_LOGE(GATTS_TAG, "config adv data timeout!!");
+        ret = ESP_ERR_TIMEOUT;
+        return ret;
+    }
+    if (start_adv_status_ != ESP_BT_STATUS_SUCCESS) {
+        ESP_LOGE(GATTS_TAG, "Advertising start failed\n");
+        ret = reg_app_status_;
+        return ret;
+    }
+
+    return ESP_OK;
 }
 
 void prepare_write(esp_gatt_if_t gatts_if, prepare_type_env_t *prepare_write_env, esp_ble_gatts_cb_param_t *param){
@@ -421,104 +460,90 @@ GATTServer::GATTServer(const std::string& device_name) :
     adv_params_.adv_int_max        = 0x40;
     adv_params_.adv_type           = ADV_TYPE_IND;
     adv_params_.own_addr_type      = BLE_ADDR_TYPE_PUBLIC;
-    // adv_params_.peer_addr            =
-    // adv_params_.peer_addr_type       =
+    // adv_params_.peer_addr          =
+    adv_params_.peer_addr_type     = BLE_ADDR_TYPE_PUBLIC;
     adv_params_.channel_map        = ADV_CHNL_ALL;
-    adv_params_.adv_filter_policy = ADV_FILTER_ALLOW_SCAN_ANY_CON_ANY;
+    adv_params_.adv_filter_policy  = ADV_FILTER_ALLOW_SCAN_ANY_CON_ANY;
 
-    sem_adv_started_ = xSemaphoreCreateBinary();
-    assert(sem_adv_started_ != nullptr);
+    event_group_ = xEventGroupCreate();
+    assert(sem_reg_app_done_ != nullptr);
     sem_reg_app_done_ = xSemaphoreCreateBinary();
     assert(sem_reg_app_done_ != nullptr);
 }
 
 void GATTServer::CreateService() {
     vSemaphoreDelete(&sem_reg_app_done_);
-    vSemaphoreDelete(&sem_adv_started_);
+    vEventGroupDelete(event_group_);
 }
 
-
-esp_err_t GATTServer::Init() {
+esp_err_t GATTServer::InitBTStack() {
     esp_err_t ret;
 
     ESP_ERROR_CHECK(esp_bt_controller_mem_release(ESP_BT_MODE_CLASSIC_BT));
-
     esp_bt_controller_config_t bt_cfg = BT_CONTROLLER_INIT_CONFIG_DEFAULT();
     ret = esp_bt_controller_init(&bt_cfg);
     if (ret) {
         ESP_LOGE(GATTS_TAG, "%s initialize controller failed: %s\n", __func__, esp_err_to_name(ret));
-        goto out;
+        return ret;
     }
     ret = esp_bt_controller_enable(ESP_BT_MODE_BLE);
     if (ret) {
         ESP_LOGE(GATTS_TAG, "%s enable controller failed: %s\n", __func__, esp_err_to_name(ret));
-        goto out;
+        return ret;
     }
     ret = esp_bluedroid_init();
     if (ret) {
         ESP_LOGE(GATTS_TAG, "%s init bluetooth failed: %s\n", __func__, esp_err_to_name(ret));
-        goto out;
+        return ret;
     }
     ret = esp_bluedroid_enable();
     if (ret) {
         ESP_LOGE(GATTS_TAG, "%s enable bluetooth failed: %s\n", __func__, esp_err_to_name(ret));
-        goto out;
+        return ret;
     }
 
-    // init gap
-    ret = esp_ble_gap_set_device_name(TEST_DEVICE_NAME);
-    if (ret) {
-        ESP_LOGE(GATTS_TAG, "set device name error, error code = %x", ret);
-        goto out;
-    }
+    return ESP_OK;
+}
 
-    ret = esp_ble_gap_register_callback(gap_event_handler);
-    if (ret) {
-        ESP_LOGE(GATTS_TAG, "gap register error, error code = %x", ret);
-        goto out;
-    }
+esp_err_t GATTServer::Init() {
+    esp_err_t ret;
 
-    ret = esp_ble_gap_config_adv_data(&adv_data_);
-    if (ret){
-        ESP_LOGE(GATTS_TAG, "config adv data failed, error code = %x", ret);
-    }
+    ret = InitBTStack();
+    if (ret) return ret;
 
-    xSemaphoreTake(sem_adv_started_, 0);
-    if (start_adv_status_ != ESP_BT_STATUS_SUCCESS) {
-        ret = reg_app_status_;
-        goto out;
-    }
+    ret = StartAdvertising();
+    if (ret) return ret;
 
     // init gatt
     ret = esp_ble_gatts_register_callback(gatts_event_handler);
     if (ret) {
         ESP_LOGE(GATTS_TAG, "gatts register error, error code = %x", ret);
-        goto out;
+        return ret;
     }
     ret = esp_ble_gatts_app_register(PROFILE_A_APP_ID);
     if (ret) {
         ESP_LOGE(GATTS_TAG, "gatts app register error, error code = %x", ret);
-        goto out;
+        return ret;
     }
 
     ret = xSemaphoreTake(sem_reg_app_done_, 3000 / portTICK_PERIOD_MS);
     if (ret) {
         ESP_LOGE(GATTS_TAG, "gatts app register timeout, error code = %x", ret);
-        goto out;
+        return ret;
     }
 
     if (reg_app_status_ != ESP_GATT_OK) {
         ret = reg_app_status_;
-        goto out;
+        return ret;
     }
 
     ret = esp_ble_gatt_set_local_mtu(500);
     if (ret) {
         ESP_LOGE(GATTS_TAG, "set local  MTU failed, error code = %x", ret);
+        return ret;
     }
 
-out:
-    return ret;
+    return ESP_OK;
 }
 
 }  // namespace sd
