@@ -1,5 +1,6 @@
 #include "gatt_server.h"
 
+#include <memory>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -24,19 +25,19 @@
 
 #define GATTS_TAG "SILICON_DREAMS"
 
-#define GATTS_SERVICE_UUID_TEST_A   0x00FF
+#define GATTS_SERVICE_UUID          0x00FF
 #define GATTS_CHAR_UUID_TEST_A      0xFF01
 #define GATTS_DESCR_UUID_TEST_A     0x3333
-#define GATTS_NUM_HANDLE_TEST_A     4
+#define GATTS_NUM_HANDLE            4
 
 #define TEST_DEVICE_NAME            "SILICON_DREAMS"
 #define TEST_MANUFACTURER_DATA_LEN  17
 
 #define GATTS_DEMO_CHAR_VAL_LEN_MAX 0x40
 
-#define PREPARE_BUF_MAX_SIZE 1024
+#define PREPARE_BUF_MAX_SIZE        1024
 
-#define PROFILE_A_APP_ID 0
+#define PROFILE_A_APP_ID            0
 
 namespace sd {
 
@@ -143,13 +144,11 @@ esp_err_t GATTServer::StartAdvertising() {
     wait_bits = xEventGroupWaitBits(event_group_, kEGAdvStartComplete, pdTRUE, pdTRUE, kEGTimeout);
     if (wait_bits != kEGAdvStartComplete) {
         ESP_LOGE(GATTS_TAG, "config adv data timeout!!");
-        ret = ESP_ERR_TIMEOUT;
-        return ret;
+        return ESP_ERR_TIMEOUT;
     }
     if (start_adv_status_ != ESP_BT_STATUS_SUCCESS) {
         ESP_LOGE(GATTS_TAG, "Advertising start failed\n");
-        ret = reg_app_status_;
-        return ret;
+        return ESP_FAIL;
     }
 
     return ESP_OK;
@@ -159,6 +158,7 @@ void prepare_write(esp_gatt_if_t gatts_if, prepare_type_env_t *prepare_write_env
     esp_gatt_status_t status = ESP_GATT_OK;
     if (param->write.need_rsp) {
         if (param->write.is_prep) {
+            ESP_LOGE(GATTS_TAG, "prepare write\n");
             if (prepare_write_env->prepare_buf == NULL) {
                 prepare_write_env->prepare_buf = (uint8_t *)malloc(PREPARE_BUF_MAX_SIZE*sizeof(uint8_t));
                 prepare_write_env->prepare_len = 0;
@@ -225,87 +225,82 @@ void GATTServer::GATTEventHandler(esp_gatts_cb_event_t event, esp_gatt_if_t gatt
         }
         reg_app_status_ = param->reg.status;
         xEventGroupSetBits(event_group_, kEGAppRegisterComplete);
-
-        // gl_profile_tab[PROFILE_A_APP_ID].service_id.is_primary = true;
-        // gl_profile_tab[PROFILE_A_APP_ID].service_id.id.inst_id = 0x00;
-        // gl_profile_tab[PROFILE_A_APP_ID].service_id.id.uuid.len = ESP_UUID_LEN_16;
-        // gl_profile_tab[PROFILE_A_APP_ID].service_id.id.uuid.uuid.uuid16 = GATTS_SERVICE_UUID_TEST_A;
-
-        // esp_err_t set_dev_name_ret = esp_ble_gap_set_device_name(TEST_DEVICE_NAME);
-        // if (set_dev_name_ret){
-        //     ESP_LOGE(GATTS_TAG, "set device name failed, error code = %x", set_dev_name_ret);
-        // }
-        // //config adv data
-        // esp_err_t config_adv_ret = esp_ble_gap_config_adv_data(g_gatt_server->mutable_adv_data());
-        // if (config_adv_ret){
-        //     ESP_LOGE(GATTS_TAG, "config adv data failed, error code = %x", config_adv_ret);
-        // }
-        // adv_config_done |= adv_config_flag;
-        // //config scan response data
-        // config_adv_ret = esp_ble_gap_config_adv_data(g_gatt_server->mutable_scan_rsp_data());
-        // if (config_adv_ret){
-        //     ESP_LOGE(GATTS_TAG, "config scan response data failed, error code = %x", config_adv_ret);
-        // }
-        // adv_config_done |= scan_rsp_config_flag;
-
-        // esp_ble_gatts_create_service(gatts_if, &gl_profile_tab[PROFILE_A_APP_ID].service_id, GATTS_NUM_HANDLE_TEST_A);
         break;
     }
     case ESP_GATTS_READ_EVT: {
         ESP_LOGI(GATTS_TAG, "GATT_READ_EVT, conn_id %d, trans_id %d, handle %d\n", param->read.conn_id, param->read.trans_id, param->read.handle);
+
+        auto it = chars_.find(param->write.handle);
+        assert(it != chars_.end());
+        auto charateristic = it->second.get();
+
         esp_gatt_rsp_t rsp;
         memset(&rsp, 0, sizeof(esp_gatt_rsp_t));
         rsp.attr_value.handle = param->read.handle;
-        rsp.attr_value.len = 4;
-        rsp.attr_value.value[0] = 0xde;
-        rsp.attr_value.value[1] = 0xed;
-        rsp.attr_value.value[2] = 0xbe;
-        rsp.attr_value.value[3] = 0xef;
-        esp_ble_gatts_send_response(gatts_if, param->read.conn_id, param->read.trans_id,
-                                    ESP_GATT_OK, &rsp);
+        rsp.attr_value.len = charateristic->size;
+        charateristic->read_cb(rsp.attr_value.value, charateristic->size);
+
+        esp_ble_gatts_send_response(gatts_if, param->read.conn_id, param->read.trans_id, ESP_GATT_OK, &rsp);
         break;
     }
     case ESP_GATTS_WRITE_EVT: {
         ESP_LOGI(GATTS_TAG, "GATT_WRITE_EVT, conn_id %d, trans_id %d, handle %d", param->write.conn_id, param->write.trans_id, param->write.handle);
         ESP_LOGI(GATTS_TAG, "GATT_WRITE_EVT, value len %d, value :", param->write.len);
-        esp_log_buffer_hex(GATTS_TAG, param->write.value, param->write.len);
-        if (!param->write.is_prep &&
-            descr_handle_ == param->write.handle &&
-            param->write.len == 2) {
-            uint16_t descr_value = param->write.value[1]<<8 | param->write.value[0];
-            if (descr_value == 0x0001){
-                if (a_property & ESP_GATT_CHAR_PROP_BIT_NOTIFY){
-                    ESP_LOGI(GATTS_TAG, "notify enable");
-                    uint8_t notify_data[15];
-                    for (int i = 0; i < sizeof(notify_data); ++i)
-                    {
-                        notify_data[i] = i%0xff;
-                    }
-                    //the size of notify_data[] need less than MTU size
-                    esp_ble_gatts_send_indicate(gatts_if, param->write.conn_id, char_handle_,
-                                            sizeof(notify_data), notify_data, false);
-                }
-            }else if (descr_value == 0x0002){
-                if (a_property & ESP_GATT_CHAR_PROP_BIT_INDICATE){
-                    ESP_LOGI(GATTS_TAG, "indicate enable");
-                    uint8_t indicate_data[15];
-                    for (int i = 0; i < sizeof(indicate_data); ++i)
-                    {
-                        indicate_data[i] = i%0xff;
-                    }
-                    //the size of indicate_data[] need less than MTU size
-                    esp_ble_gatts_send_indicate(gatts_if, param->write.conn_id, char_handle_,
-                                            sizeof(indicate_data), indicate_data, true);
-                }
+        auto it = chars_.find(param->write.handle);
+        assert(it != chars_.end());
+        auto charateristic = it->second.get();
+        charateristic->write_cb(param->write.value, param->write.len);
+        // TODO(liang), implement notification
+        // if (!param->write.is_prep &&
+        //     descr_handle_ == param->write.handle &&
+        //     param->write.len == 2) {
+        //     uint16_t descr_value = param->write.value[1]<<8 | param->write.value[0];
+        //     if (descr_value == 0x0001){
+        //         if (a_property & ESP_GATT_CHAR_PROP_BIT_NOTIFY){
+        //             ESP_LOGI(GATTS_TAG, "notify enable");
+        //             uint8_t notify_data[15];
+        //             for (int i = 0; i < sizeof(notify_data); ++i)
+        //             {
+        //                 notify_data[i] = i%0xff;
+        //             }
+        //             //the size of notify_data[] need less than MTU size
+        //             esp_ble_gatts_send_indicate(gatts_if, param->write.conn_id, char_handle_,
+        //                                     sizeof(notify_data), notify_data, false);
+        //         }
+        //     }else if (descr_value == 0x0002){
+        //         if (a_property & ESP_GATT_CHAR_PROP_BIT_INDICATE){
+        //             ESP_LOGI(GATTS_TAG, "indicate enable");
+        //             uint8_t indicate_data[15];
+        //             for (int i = 0; i < sizeof(indicate_data); ++i)
+        //             {
+        //                 indicate_data[i] = i%0xff;
+        //             }
+        //             //the size of indicate_data[] need less than MTU size
+        //             esp_ble_gatts_send_indicate(gatts_if, param->write.conn_id, char_handle_,
+        //                                     sizeof(indicate_data), indicate_data, true);
+        //         }
+        //     }
+        //     else if (descr_value == 0x0000){
+        //         ESP_LOGI(GATTS_TAG, "notify/indicate disable ");
+        //     } else {
+        //         ESP_LOGE(GATTS_TAG, "unknown descr value");
+        //         esp_log_buffer_hex(GATTS_TAG, param->write.value, param->write.len);
+        //     }
+        // }
+        if (param->write.need_rsp) {
+            esp_gatt_status_t status = ESP_GATT_OK;
+            if (param->write.is_prep) {
+                // TODO(liang), implement prepare write
+                ESP_LOGE(GATTS_TAG, "prepare write is not supported now!\n");
+                status = ESP_GATT_REQ_NOT_SUPPORTED;
+                // prepare_write(gatts_if, &a_prepare_write_env, param);
             }
-            else if (descr_value == 0x0000){
-                ESP_LOGI(GATTS_TAG, "notify/indicate disable ");
-            } else {
-                ESP_LOGE(GATTS_TAG, "unknown descr value");
-                esp_log_buffer_hex(GATTS_TAG, param->write.value, param->write.len);
-            }
+            esp_ble_gatts_send_response(gatts_if,
+                                        param->write.conn_id,
+                                        param->write.trans_id,
+                                        status,
+                                        NULL);
         }
-        prepare_write(gatts_if, &a_prepare_write_env, param);
         break;
     }
     case ESP_GATTS_EXEC_WRITE_EVT:
@@ -320,57 +315,62 @@ void GATTServer::GATTEventHandler(esp_gatts_cb_event_t event, esp_gatt_if_t gatt
         break;
     case ESP_GATTS_CREATE_EVT: {
         ESP_LOGI(GATTS_TAG, "CREATE_SERVICE_EVT, status %d,  service_handle %d\n", param->create.status, param->create.service_handle);
-        service_handle_ = param->create.service_handle;
-        char_uuid_.len = ESP_UUID_LEN_16;
-        char_uuid_.uuid.uuid16 = GATTS_CHAR_UUID_TEST_A;
+        auto service = services_[param->create.service_id.id.inst_id].get();
+        service->service_handle = param->create.service_handle;
+        esp_ble_gatts_start_service(service->service_handle);
 
-        esp_ble_gatts_start_service(service_handle_);
-        a_property = ESP_GATT_CHAR_PROP_BIT_READ | ESP_GATT_CHAR_PROP_BIT_WRITE | ESP_GATT_CHAR_PROP_BIT_NOTIFY;
-        esp_err_t add_char_ret = esp_ble_gatts_add_char(service_handle_, &char_uuid_,
-                                                        ESP_GATT_PERM_READ | ESP_GATT_PERM_WRITE,
-                                                        a_property,
-                                                        &gatts_demo_char1_val, NULL);
-        if (add_char_ret){
-            ESP_LOGE(GATTS_TAG, "add char failed, error code =%x",add_char_ret);
-        }
+        // char_uuid_.len = ESP_UUID_LEN_16;
+        // char_uuid_.uuid.uuid16 = GATTS_CHAR_UUID_TEST_A;
+        // a_property = ESP_GATT_CHAR_PROP_BIT_READ | ESP_GATT_CHAR_PROP_BIT_WRITE | ESP_GATT_CHAR_PROP_BIT_NOTIFY;
+        // esp_err_t add_char_ret = esp_ble_gatts_add_char(service_handle_, &char_uuid_,
+        //                                                 ESP_GATT_PERM_READ | ESP_GATT_PERM_WRITE,
+        //                                                 a_property,
+        //                                                 &gatts_demo_char1_val, NULL);
+        // if (add_char_ret){
+        //     ESP_LOGE(GATTS_TAG, "add char failed, error code =%x",add_char_ret);
+        // }
+
         break;
     }
     case ESP_GATTS_ADD_INCL_SRVC_EVT:
         break;
     case ESP_GATTS_ADD_CHAR_EVT: {
-        uint16_t length = 0;
-        const uint8_t *prf_char;
+        // uint16_t length = 0;
+        // const uint8_t *prf_char;
 
         ESP_LOGI(GATTS_TAG, "ADD_CHAR_EVT, status %d,  attr_handle %d, service_handle %d\n",
                 param->add_char.status, param->add_char.attr_handle, param->add_char.service_handle);
-        char_handle_ = param->add_char.attr_handle;
-        descr_uuid_.len = ESP_UUID_LEN_16;
-        descr_uuid_.uuid.uuid16 = ESP_GATT_UUID_CHAR_CLIENT_CONFIG;
-        esp_err_t get_attr_ret = esp_ble_gatts_get_attr_value(param->add_char.attr_handle,  &length, &prf_char);
-        if (get_attr_ret == ESP_FAIL){
-            ESP_LOGE(GATTS_TAG, "ILLEGAL HANDLE");
-        }
+        add_char_status_ = param->add_char.status;
+        new_char_handle_ = param->add_char.attr_handle;
+        xEventGroupSetBits(event_group_, kEGAddCharComplete);
+        // descr_uuid_.len = ESP_UUID_LEN_16;
+        // descr_uuid_.uuid.uuid16 = ESP_GATT_UUID_CHAR_CLIENT_CONFIG;
+        // esp_err_t get_attr_ret = esp_ble_gatts_get_attr_value(param->add_char.attr_handle,  &length, &prf_char);
+        // if (get_attr_ret == ESP_FAIL){
+        //     ESP_LOGE(GATTS_TAG, "ILLEGAL HANDLE");
+        // }
 
-        ESP_LOGI(GATTS_TAG, "the gatts demo char length = %x\n", length);
-        for(int i = 0; i < length; i++){
-            ESP_LOGI(GATTS_TAG, "prf_char[%x] =%x\n",i,prf_char[i]);
-        }
-        esp_err_t add_descr_ret = esp_ble_gatts_add_char_descr(service_handle_, &descr_uuid_,
-                                                                ESP_GATT_PERM_READ | ESP_GATT_PERM_WRITE, NULL, NULL);
-        if (add_descr_ret){
-            ESP_LOGE(GATTS_TAG, "add char descr failed, error code =%x", add_descr_ret);
-        }
+        // ESP_LOGI(GATTS_TAG, "the gatts demo char length = %x\n", length);
+        // for(int i = 0; i < length; i++){
+        //     ESP_LOGI(GATTS_TAG, "prf_char[%x] =%x\n",i,prf_char[i]);
+        // }
+        // esp_err_t add_descr_ret = esp_ble_gatts_add_char_descr(service_handle_, &descr_uuid_,
+        //                                                         ESP_GATT_PERM_READ | ESP_GATT_PERM_WRITE, NULL, NULL);
+        // if (add_descr_ret){
+        //     ESP_LOGE(GATTS_TAG, "add char descr failed, error code =%x", add_descr_ret);
+        // }
     }
     case ESP_GATTS_ADD_CHAR_DESCR_EVT:
-        descr_handle_ = param->add_char_descr.attr_handle;
-        ESP_LOGI(GATTS_TAG, "ADD_DESCR_EVT, status %d, attr_handle %d, service_handle %d\n",
-                 param->add_char_descr.status, param->add_char_descr.attr_handle, param->add_char_descr.service_handle);
+        // descr_handle_ = param->add_char_descr.attr_handle;
+        // ESP_LOGI(GATTS_TAG, "ADD_DESCR_EVT, status %d, attr_handle %d, service_handle %d\n",
+        //          param->add_char_descr.status, param->add_char_descr.attr_handle, param->add_char_descr.service_handle);
         break;
     case ESP_GATTS_DELETE_EVT:
         break;
     case ESP_GATTS_START_EVT:
         ESP_LOGI(GATTS_TAG, "SERVICE_START_EVT, status %d, service_handle %d\n",
                  param->start.status, param->start.service_handle);
+        xEventGroupSetBits(event_group_, kEGServiceCreateComplete);
         break;
     case ESP_GATTS_STOP_EVT:
         break;
@@ -468,8 +468,81 @@ GATTServer::GATTServer(const std::string& device_name) :
     assert(event_group_ != nullptr);
 }
 
-void GATTServer::CreateService() {
+GATTServer::~GATTServer() {
     vEventGroupDelete(event_group_);
+}
+
+esp_err_t GATTServer::AddCharateristic(uint8_t service_inst_id,
+                                       uint16_t uuid,
+                                       size_t size,
+                                       char_rw_cb read_cb,
+                                       char_rw_cb write_cb) {
+    assert(size <= ESP_GATT_MAX_ATTR_LEN);
+    if (service_inst_id >= services_.size()) {
+        ESP_LOGE(GATTS_TAG, "failed to add charateristic, invalid service instance id: %d\n", service_inst_id);
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    auto service = services_[service_inst_id].get();
+    esp_bt_uuid_t char_uuid;
+    char_uuid.len = ESP_UUID_LEN_16;
+    char_uuid.uuid.uuid16 = uuid;
+    esp_gatt_char_prop_t property = ESP_GATT_CHAR_PROP_BIT_READ |
+                                    ESP_GATT_CHAR_PROP_BIT_WRITE |
+                                    ESP_GATT_CHAR_PROP_BIT_NOTIFY;
+    auto ret = esp_ble_gatts_add_char(service->service_handle, &char_uuid,
+                                      ESP_GATT_PERM_READ | ESP_GATT_PERM_WRITE,
+                                      property,
+                                      &gatts_demo_char1_val,
+                                      NULL);
+    if (ret){
+        ESP_LOGE(GATTS_TAG, "add char failed, error code =%x", ret);
+        return ret;
+    }
+
+    auto wait_bits = xEventGroupWaitBits(event_group_, kEGAddCharComplete, pdTRUE, pdTRUE, kEGTimeout);
+    if (wait_bits != kEGAddCharComplete) {
+        ESP_LOGE(GATTS_TAG, "add charateristic timeout!\n");
+        return ESP_ERR_TIMEOUT;
+    }
+    if (add_char_status_ != ESP_GATT_OK) {
+        ESP_LOGE(GATTS_TAG, "failed to add charateristics, status: %d\n", add_char_status_);
+        return ESP_FAIL;
+    }
+
+    auto new_char = new Charateristic();
+    new_char->service_inst_id = service_inst_id;
+    new_char->char_handle = new_char_handle_;
+    new_char->char_uuid = char_uuid;
+    new_char->size = size;
+    new_char->read_cb = read_cb;
+    new_char->write_cb = write_cb;
+    auto it = chars_.find(new_char_handle_);
+    assert(it == chars_.end());
+    chars_.emplace(new_char_handle_, new_char);
+
+    return ESP_OK;
+}
+
+esp_err_t GATTServer::CreateService(uint16_t uuid, uint8_t* inst_id) {
+    auto new_service = new Service();
+    new_service->service_id.is_primary = true;
+    new_service->service_id.id.inst_id = services_.size();
+    new_service->service_id.id.uuid.len = ESP_UUID_LEN_16;
+    new_service->service_id.id.uuid.uuid.uuid16 = uuid;
+    services_.emplace_back(new_service);
+
+    esp_ble_gatts_create_service(gatts_if_, &new_service->service_id, GATTS_NUM_HANDLE);
+    auto wait_bits = xEventGroupWaitBits(event_group_, kEGServiceCreateComplete, pdTRUE, pdTRUE, kEGTimeout);
+    if (wait_bits != kEGServiceCreateComplete) {
+        ESP_LOGE(GATTS_TAG, "create service timeout!\n");
+        services_.pop_back();
+        return ESP_ERR_TIMEOUT;
+    }
+
+    *inst_id = new_service->service_id.id.inst_id;
+
+    return ESP_OK;
 }
 
 esp_err_t GATTServer::InitBTStack() {
