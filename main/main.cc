@@ -28,14 +28,14 @@ void hello_dream(void* arg) {
 
     ESP_ERROR_CHECK(gatt_server->AddCharateristic(service_inst_id, kGATTCharUUID,
                 4,
-                [](uint8_t* write_value, size_t len) {
-                    esp_log_buffer_hex("SILICON_DREAMS", write_value, len);
-                },
                 [](uint8_t* read_value, size_t len) {
                     read_value[0] = 0xde;
                     read_value[1] = 0xed;
                     read_value[2] = 0xbe;
                     read_value[3] = 0xef;
+                },
+                [](uint8_t* write_value, size_t len) {
+                    esp_log_buffer_hex("SILICON_DREAMS", write_value, len);
                 }));
 
     uint32_t cnt = 0;

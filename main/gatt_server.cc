@@ -19,6 +19,7 @@
 #include "esp_bt_main.h"
 #include "esp_gatt_common_api.h"
 
+#include <algorithm>
 #include "sdkconfig.h"
 #include <string>
 #include <vector>
@@ -249,7 +250,8 @@ void GATTServer::GATTEventHandler(esp_gatts_cb_event_t event, esp_gatt_if_t gatt
         auto it = chars_.find(param->write.handle);
         assert(it != chars_.end());
         auto charateristic = it->second.get();
-        charateristic->write_cb(param->write.value, param->write.len);
+        size_t len = std::min(charateristic->size, (size_t)param->write.len);
+        charateristic->write_cb(param->write.value, len);
         // TODO(liang), implement notification
         // if (!param->write.is_prep &&
         //     descr_handle_ == param->write.handle &&
