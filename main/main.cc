@@ -20,14 +20,11 @@ const static uint16_t kGATTCharUUID = 0xFF01;
 void hello_dream(void* arg) {
     printf("Hello silicon dreams!!!\n");
 
-    auto gatt_server = GATTServer::RegisterServer("SILICON DREAMS");
-    gatt_server->Init();
-
     uint8_t service_inst_id;
+    auto gatt_server = GATTServer::RegisterServer("SILICON DREAMS");
+    ESP_ERROR_CHECK(gatt_server->Init());
     ESP_ERROR_CHECK(gatt_server->CreateService(kGATTServiceUUID, &service_inst_id));
-
-    ESP_ERROR_CHECK(gatt_server->AddCharateristic(service_inst_id, kGATTCharUUID,
-                4,
+    ESP_ERROR_CHECK(gatt_server->AddCharateristic(service_inst_id, kGATTCharUUID, 4,
                 [](uint8_t* read_value, size_t len) {
                     read_value[0] = 0xde;
                     read_value[1] = 0xed;

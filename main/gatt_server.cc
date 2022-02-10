@@ -1,27 +1,25 @@
 #include "gatt_server.h"
 
-#include <memory>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/event_groups.h"
 #include "esp_debug_helpers.h"
 #include "esp_system.h"
 #include "esp_log.h"
-#include "nvs_flash.h"
 #include "esp_bt.h"
-
 #include "esp_gap_ble_api.h"
 #include "esp_gatts_api.h"
 #include "esp_bt_defs.h"
 #include "esp_bt_main.h"
 #include "esp_gatt_common_api.h"
+#include "nvs_flash.h"
+#include "sdkconfig.h"
 
 #include <algorithm>
-#include "sdkconfig.h"
-#include <string>
+#include <memory>
+#include "stdio.h"
+#include "stdlib.h"
+#include "string.h"
 #include <vector>
 
 #define GATTS_TAG "SILICON_DREAMS"
@@ -116,7 +114,7 @@ esp_err_t GATTServer::StartAdvertising() {
         ESP_LOGE(GATTS_TAG, "set device name error, error code = %x", ret);
         return ret;
     }
-    
+
     ret = esp_ble_gap_register_callback(gap_event_handler);
     if (ret) {
         ESP_LOGE(GATTS_TAG, "gap register error, error code = %x", ret);
