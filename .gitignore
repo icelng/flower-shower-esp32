@@ -1,5 +1,5 @@
 build/
-sdkconfig*
+sdkconfig.old
 .cache
 *.swp
 compile_commands.json
