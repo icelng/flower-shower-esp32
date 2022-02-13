@@ -23,6 +23,7 @@ esp_err_t Motor::Stop() {
 }
 
 esp_err_t Motor::CreateTimer(MotorTimerParam* param) {
+    // TODO(liang), add mutex, ensure task safe
     uint8_t new_timer_no = 0;
     for (new_timer_no = 0; new_timer_no < timer_params_.size(); new_timer_no++) {
         if (timer_params_[new_timer_no].get() == nullptr) break;
@@ -33,14 +34,12 @@ esp_err_t Motor::CreateTimer(MotorTimerParam* param) {
     if (param->period_ms >= portTICK_PERIOD_MS && param->period_ms < param->duration_ms) {
         return ESP_ERR_INVALID_ARG;
     }
-    param->timer_no = new_timer_no; 
-    return InitMotorTimer(param);
+    param->timer_no = new_timer_no;
+    timer_params_.emplace_back(new MotorTimerParam(*param));
+    return InitTimerContext(param);
 }
 
-esp_err_t Motor::InitMotorTimer(MotorTimerParam* param) {
-    auto new_param = new MotorTimerParam(*param);
-    timer_params_.emplace_back(new_param);
-
+esp_err_t Motor::InitTimerContext(MotorTimerParam* param) {
     // if the timer is not period, and is expired, there is no need to create timer context.
     auto curtime_ms = get_curtime_ms();
     if (param->period_ms < portTICK_PERIOD_MS &&

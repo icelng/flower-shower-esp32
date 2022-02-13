@@ -54,7 +54,7 @@ class Motor {
 
     static void TimerTaskEntry(TimerHandle_t timer_handle);
     void TimerTask(MotorTimerCtx* ctx);
-    esp_err_t InitMotorTimer(MotorTimerParam* param);
+    esp_err_t InitTimerContext(MotorTimerParam* param);
 
     std::string motor_name_;
     GATTServer* gatt_server_;
