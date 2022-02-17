@@ -9,8 +9,32 @@ namespace sd {
 Motor::Motor(const std::string motor_name) : motor_name_(motor_name),
                                              timer_params_(kMaxNumTimers),
                                              timer_ctxs_(kMaxNumTimers) {}
+Motor::~Motor() {
+    if (nvs_handle_) nvs_close(nvs_handle_);
+}
 
 esp_err_t Motor::Init() {
+    ESP_LOGI(LOG_TAG_MOTOR, "[INIT MOTOR START] motor_name: %s\n", motor_name_.c_str());
+
+    RETURN_IF_ERROR(nvs_open(NVS_NS_MOTOR_TIMER, NVS_READWRITE, &nvs_handle_));
+
+    auto it = nvs_entry_find(NVS_DEFAULT_PART_NAME, NVS_NS_MOTOR_TIMER, NVS_TYPE_BLOB);
+    for (; it != nullptr; it = nvs_entry_next(it)) {
+        nvs_entry_info_t entry;
+        size_t len;
+        MotorTimerParam* param = new MotorTimerParam;;
+        nvs_entry_info(it, &entry);
+        ESP_ERROR_CHECK(nvs_get_blob(nvs_handle_, entry.key, param, &len));
+        uint8_t timer_no = atoi(entry.key);
+        timer_params_[timer_no].reset(param);
+    };
+
+    for (auto& param : timer_params_) {
+        if (param.get() != nullptr) ESP_ERROR_CHECK(InitTimerContext(param.get()));
+    }
+
+    ESP_LOGI(LOG_TAG_MOTOR, "[INIT MOTOR END] motor_name: %s\n", motor_name_.c_str());
+    is_initiated_ = true;
     return ESP_OK;
 }
 
@@ -24,6 +48,8 @@ esp_err_t Motor::Stop() {
 
 esp_err_t Motor::CreateTimer(MotorTimerParam* param) {
     // TODO(liang), add mutex, ensure task safe
+    if (!is_initiated_) { return ESP_ERR_INVALID_STATE; }
+
     uint8_t new_timer_no = 0;
     for (new_timer_no = 0; new_timer_no < timer_params_.size(); new_timer_no++) {
         if (timer_params_[new_timer_no].get() == nullptr) break;
@@ -35,7 +61,14 @@ esp_err_t Motor::CreateTimer(MotorTimerParam* param) {
         return ESP_ERR_INVALID_ARG;
     }
     param->timer_no = new_timer_no;
-    timer_params_.emplace_back(new MotorTimerParam(*param));
+
+    // save to nvs
+    char nvs_timer_key[4];
+    sprintf(nvs_timer_key, "%d", new_timer_no);
+    RETURN_IF_ERROR(nvs_set_blob(nvs_handle_, nvs_timer_key, param, sizeof(MotorTimerParam)));
+
+    timer_params_[new_timer_no].reset(new MotorTimerParam(*param));
+
     return InitTimerContext(param);
 }
 
@@ -46,6 +79,8 @@ esp_err_t Motor::InitTimerContext(MotorTimerParam* param) {
         (param->first_start_timestamp + param->duration_ms) <= curtime_ms) {
         return ESP_OK;
     }
+
+    ESP_LOGI(LOG_TAG_MOTOR, "[INIT TIMER CTX START] motor_name: %s, timer_no: %d\n", motor_name_.c_str(), param->timer_no);
 
     // calculate the ticks to start motor
     int64_t offset_from_frist_start = curtime_ms - param->first_start_timestamp;
@@ -63,11 +98,18 @@ esp_err_t Motor::InitTimerContext(MotorTimerParam* param) {
     char timer_name[16];
     sprintf(timer_name, "motor-timer-%d", param->timer_no);
     auto new_ctx = new MotorTimerCtx();
-    timer_ctxs_.emplace_back(new_ctx);
+    timer_ctxs_[param->timer_no].reset(new_ctx);
     new_ctx->motor = this;
     new_ctx->timer_no = param->timer_no;
     new_ctx->motor_cmd = START_MOTOR;
     new_ctx->timer_handle = xTimerCreate(timer_name, ticks_to_start, pdFALSE, new_ctx, TimerTaskEntry);
+    new_ctx->stopped = false;
+    if (new_ctx->timer_handle == nullptr) {
+        return ESP_ERR_NO_MEM;
+    }
+    ESP_ERROR_CHECK(xTimerStart(new_ctx->timer_handle, 0));
+
+    ESP_LOGI(LOG_TAG_MOTOR, "[INIT TIMER CTX END] motor_name: %s, timer_no: %d\n", motor_name_.c_str(), param->timer_no);
 
     return ESP_OK;
 }
@@ -123,14 +165,25 @@ void Motor::TimerTask(MotorTimerCtx* ctx) {
 }
 
 esp_err_t Motor::ListTimers(std::vector<MotorTimerParam>* times) {
+    if (!is_initiated_) { return ESP_ERR_INVALID_STATE; }
     return ESP_OK;
 }
 
 esp_err_t Motor::ClearTimer(uint16_t time_no) {
+    if (!is_initiated_) { return ESP_ERR_INVALID_STATE; }
+
+    // destroy context
+
+
+
+    // and erase timer param
+
+
     return ESP_OK;
 }
 
 esp_err_t Motor::ClearAllTimers() {
+    if (!is_initiated_) { return ESP_ERR_INVALID_STATE; }
     return ESP_OK;
 }
 

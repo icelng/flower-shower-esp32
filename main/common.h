@@ -2,6 +2,11 @@
 
 #define LOG_TAG_MOTOR "motor"
 
+#define NVS_NS_MOTOR_TIMER "motor-timer"
+
+#define RETURN_IF_ERROR(esp_err)\
+    if (esp_err) return esp_err
+
 namespace sd {
 static uint64_t get_curtime_ms() {
     struct timeval tv_now;

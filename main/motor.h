@@ -30,7 +30,7 @@ class Motor {
     esp_err_t Start(float speed);
     esp_err_t Stop();
 
-    // timer
+    // timer manager
     esp_err_t CreateTimer(MotorTimerParam* timer);
     esp_err_t ListTimers(std::vector<MotorTimerParam>* timers);
     esp_err_t ClearTimer(uint16_t timer_no);
@@ -43,10 +43,12 @@ class Motor {
     };
 
     struct MotorTimerCtx {
-        Motor*        motor;
-        uint8_t       timer_no;
-        TimerHandle_t timer_handle;
-        MotorTimerCMD motor_cmd;
+        Motor*         motor;
+        uint8_t        timer_no;
+        TimerHandle_t  timer_handle;
+        MotorTimerCMD  motor_cmd;
+        bool           stopped;
+        bool           clear;
     };
 
     static const uint8_t    kMaxNumTimers   = 16;
@@ -56,9 +58,10 @@ class Motor {
     void TimerTask(MotorTimerCtx* ctx);
     esp_err_t InitTimerContext(MotorTimerParam* param);
 
+    bool is_initiated_ = false;
     std::string motor_name_;
     GATTServer* gatt_server_;
-    std::unique_ptr<nvs::NVSHandle> nvs_handle_;
+    nvs_handle_t nvs_handle_;
     std::vector<std::unique_ptr<MotorTimerParam>> timer_params_;
     std::vector<std::unique_ptr<MotorTimerCtx>> timer_ctxs_;
 
