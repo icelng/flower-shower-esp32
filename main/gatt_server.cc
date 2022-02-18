@@ -27,7 +27,7 @@
 #define GATTS_SERVICE_UUID          0x00FF
 #define GATTS_CHAR_UUID_TEST_A      0xFF01
 #define GATTS_DESCR_UUID_TEST_A     0x3333
-#define GATTS_NUM_HANDLE            4
+#define GATTS_NUM_HANDLE            8
 
 #define TEST_DEVICE_NAME            "SILICON_DREAMS"
 #define TEST_MANUFACTURER_DATA_LEN  17
@@ -506,7 +506,8 @@ esp_err_t GATTServer::AddCharateristic(uint8_t service_inst_id,
         return ESP_ERR_TIMEOUT;
     }
     if (add_char_status_ != ESP_GATT_OK) {
-        ESP_LOGE(GATTS_TAG, "failed to add charateristics, status: %d\n", add_char_status_);
+        ESP_LOGE(GATTS_TAG, "failed to add charateristics, status: %d %s\n",
+                 add_char_status_, esp_err_to_name(add_char_status_));
         return ESP_FAIL;
     }
 
@@ -577,6 +578,8 @@ esp_err_t GATTServer::InitBTStack() {
 esp_err_t GATTServer::Init() {
     esp_err_t ret;
 
+    ESP_LOGI(GATTS_TAG, "[INIT GATT SERVER START] device_name: %s\n", device_name_.c_str());
+
     ret = InitBTStack();
     if (ret) return ret;
 
@@ -611,6 +614,8 @@ esp_err_t GATTServer::Init() {
         ESP_LOGE(GATTS_TAG, "set local  MTU failed, error code = %x", ret);
         return ret;
     }
+
+    ESP_LOGI(GATTS_TAG, "[INIT GATT SERVER SUCCESSFULLY] device_name: %s\n", device_name_.c_str());
 
     return ESP_OK;
 }

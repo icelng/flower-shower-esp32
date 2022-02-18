@@ -7,7 +7,7 @@ namespace sd {
 Motor::Motor(const std::string motor_name) : motor_name_(motor_name),
                                              timer_params_(kMaxNumTimers),
                                              timer_ctxs_(kMaxNumTimers),
-                                             mutex_(std::make_unique<Mutex>()){}
+                                             mutex_(std::make_unique<Mutex>()) {}
 Motor::~Motor() {
     {
         MutexGuard g(mutex_.get());
@@ -127,7 +127,7 @@ esp_err_t Motor::InitTimerContext(MotorTimerParam* param) {
     if (new_ctx->timer_handle == nullptr) {
         return ESP_ERR_NO_MEM;
     }
-    ESP_ERROR_CHECK(xTimerStart(new_ctx->timer_handle, 0));
+    assert(xTimerStart(new_ctx->timer_handle, 0));
 
     ESP_LOGI(LOG_TAG_MOTOR,
              "[INIT TIMER CTX SUCCESSFULLY] motor_name: %s timer_no: %d\n",
@@ -144,7 +144,7 @@ void Motor::TimerTaskEntry(TimerHandle_t timer_handle) {
 
 void Motor::TimerTask(MotorTimerCtx* ctx) {
     auto timer_param = timer_params_[ctx->timer_no].get();
-    TickType_t ticks_to_next_cmd;
+    TickType_t ticks_to_next_cmd = 0;
     MotorTimerCMD next_cmd;
 
     switch(ctx->motor_cmd) {
@@ -224,10 +224,6 @@ esp_err_t Motor::ClearTimer(uint8_t timer_no) {
 }
 
 esp_err_t Motor::ClearAllTimers() {
-    MutexGuard g(mutex_.get());
-
-    if (!is_initiated_) return ESP_ERR_INVALID_STATE;
-
     for (uint8_t timer_no = 0; timer_no < kMaxNumTimers; timer_no++) {
         RETURN_IF_ERROR(ClearTimer(timer_no));
     }
