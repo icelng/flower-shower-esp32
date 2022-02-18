@@ -1,3 +1,7 @@
+#pragma once
+
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "sys/time.h"
 
 #define LOG_TAG_MOTOR "motor"
@@ -14,5 +18,40 @@ static uint64_t get_curtime_ms() {
     int64_t time_ms = (int64_t)tv_now.tv_sec * 1000L + (int64_t)tv_now.tv_usec / 1000L;
     return time_ms;
 }
+
+class Mutex {
+  public:
+    Mutex() {
+        sem_ = xSemaphoreCreateMutex();
+        assert(sem_ != nullptr);
+    }
+
+    ~Mutex() {
+        vSemaphoreDelete(sem_);
+    }
+
+    void Lock() {
+        xSemaphoreTake(sem_, portMAX_DELAY);
+    }
+
+    void Unlock() {
+        xSemaphoreGive(sem_);
+    }
+
+  private:
+    SemaphoreHandle_t sem_;
+};
+
+class MutexGuard {
+  public:
+    explicit MutexGuard(Mutex* mutex) : mutex_(mutex) {
+        mutex_->Lock();
+    }
+    ~MutexGuard() {
+        mutex_->Unlock();
+    }
+  private:
+    Mutex* mutex_;
+};
 
 }  // namespace sd
