@@ -199,6 +199,23 @@ esp_err_t Motor::ListTimers(std::vector<MotorTimerParam>* timers) {
     return ESP_OK;
 }
 
+esp_err_t Motor::ListTimersInJson(Json* json) {
+    assert(json != nullptr);
+    MutexGuard g(mutex_.get());
+
+    if (!is_initiated_) return ESP_ERR_INVALID_STATE;
+
+    for (auto& timer : timer_params_) {
+        if (timer) {
+            Json j;
+            to_json(j, *timer.get());
+            json->emplace_back(j);
+        }
+    }
+
+    return ESP_OK;
+}
+
 esp_err_t Motor::ClearTimer(uint8_t timer_no) {
     MutexGuard g(mutex_.get());
 

@@ -2,6 +2,7 @@
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include "nlohmann/json.hpp"
 #include "sys/time.h"
 
 #define LOG_TAG_MOTOR "motor"
@@ -12,6 +13,9 @@
     if (esp_err) return esp_err
 
 namespace sd {
+
+using Json = nlohmann::json;
+
 static uint64_t get_curtime_ms() {
     struct timeval tv_now;
     gettimeofday(&tv_now, NULL);

@@ -16,16 +16,19 @@
 
 namespace sd {
 
+struct MotorTimerParam {
+    uint8_t  timer_no;
+    uint64_t first_start_timestamp;
+    uint64_t period_ms;
+    uint64_t duration_ms;
+    float    speed;
+};
+
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(MotorTimerParam, timer_no, first_start_timestamp, period_ms, duration_ms, speed);
+
 // TODO(liang), abstract it
 class Motor {
   public:
-    struct MotorTimerParam {
-        uint8_t  timer_no;
-        uint64_t first_start_timestamp;
-        uint64_t period_ms;
-        uint64_t duration_ms;
-        float    speed;
-    };
 
     explicit Motor(const std::string motor_name);
     ~Motor();
@@ -37,6 +40,7 @@ class Motor {
     // timer manager
     esp_err_t CreateTimer(MotorTimerParam* timer);
     esp_err_t ListTimers(std::vector<MotorTimerParam>* timers);
+    esp_err_t ListTimersInJson(Json* json);
     esp_err_t ClearTimer(uint8_t timer_no);
     esp_err_t ClearAllTimers();
 
