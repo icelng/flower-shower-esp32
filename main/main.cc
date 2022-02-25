@@ -41,33 +41,36 @@ void hello_dream(void* arg) {
     auto gatt_server = GATTServer::RegisterServer("SILICON DREAMS");
     ESP_ERROR_CHECK(gatt_server->Init());
     ESP_ERROR_CHECK(gatt_server->CreateService(kGATTServiceUUID, &service_inst_id));
-    ESP_ERROR_CHECK(gatt_server->AddCharateristic(service_inst_id, kGATTCharUUIDCreateMotorTimer, 1,
-                [](uint8_t* read_value, size_t len) {
-                    read_value[0] = 0xcc;
+    ESP_ERROR_CHECK(gatt_server->AddCharateristic(service_inst_id, kGATTCharUUIDCreateMotorTimer,
+                [](BufferPtr* read_buf, size_t* len) {
+                    *len = 1;
+                    *read_buf = create_unique_buf(*len);
+                    (read_buf->get())[0] = 'c';
                 },
                 [&motor, &motor_param](uint8_t* write_value, size_t len) {
                     ESP_ERROR_CHECK(motor->CreateTimer(&motor_param));
                 }));
-    ESP_ERROR_CHECK(gatt_server->AddCharateristic(service_inst_id, kGATTCharUUIDClearMotorTimer, 1,
-                [](uint8_t* read_value, size_t len) {
-                    read_value[0] = 0xcc;
-                },
+    ESP_ERROR_CHECK(gatt_server->AddCharateristic(service_inst_id, kGATTCharUUIDClearMotorTimer,
+                [](BufferPtr*, size_t*) {},
                 [&motor](uint8_t* write_value, size_t len) {
                     ESP_ERROR_CHECK(motor->ClearTimer(write_value[0]));
                 }));
-    ESP_ERROR_CHECK(gatt_server->AddCharateristic(service_inst_id, kGATTCharUUIDClearAllMotorTimers, 1,
-                [](uint8_t* read_value, size_t len) {
-                    read_value[0] = 0xcc;
-                },
-                [&motor](uint8_t* write_value, size_t len) {
-                    ESP_ERROR_CHECK(motor->ClearAllTimers());
-                }));
-    ESP_ERROR_CHECK(gatt_server->AddCharateristic(service_inst_id, kGATTCharUUIDListMotorTimers, 128,
-                [&motor](uint8_t* read_value, size_t len) {
+    // ESP_ERROR_CHECK(gatt_server->AddCharateristic(service_inst_id, kGATTCharUUIDClearAllMotorTimers, 1,
+    //             [](uint8_t* read_value, size_t len) {
+    //                 read_value[0] = 0xcc;
+    //             },
+    //             [&motor](uint8_t* write_value, size_t len) {
+    //                 ESP_ERROR_CHECK(motor->ClearAllTimers());
+    //             }));
+    ESP_ERROR_CHECK(gatt_server->AddCharateristic(service_inst_id, kGATTCharUUIDListMotorTimers,
+                [&motor](BufferPtr* read_buf, size_t* len) {
                     Json j;
                     ESP_ERROR_CHECK(motor->ListTimersInJson(&j));
                     auto timers_json_str = j.dump();
-                    memcpy(read_value, timers_json_str.c_str(), len);
+                    ESP_LOGI(LOG_TAG_MAIN, "list timers: %s\n", timers_json_str.c_str());
+                    *len = timers_json_str.size() + 1;
+                    *read_buf = create_unique_buf(*len);
+                    memcpy((*read_buf).get(), timers_json_str.c_str(), *len);
                 },
                 [](uint8_t* write_value, size_t len) {
                 }));

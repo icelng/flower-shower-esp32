@@ -5,6 +5,8 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
 
+#include "common.h"
+
 #include <atomic>
 #include <functional>
 #include <memory>
@@ -14,7 +16,10 @@
 
 namespace sd {
 
-using char_rw_cb = std::function<void(uint8_t*, size_t)>;
+const static size_t kGATTMTU = 22;
+
+using char_read_cb = std::function<void(BufferPtr*, size_t*)>;
+using char_write_cb = std::function<void(uint8_t*, size_t)>;
 
 static constexpr uint8_t kServiceUUID128[16] = {
     /* LSB <--------------------------------------------------------------------------------> MSB */
@@ -30,7 +35,8 @@ class GATTServer {
 
     esp_err_t Init();
     esp_err_t CreateService(uint16_t uuid, uint8_t* inst_id);
-    esp_err_t AddCharateristic(uint8_t service_inst_id, uint16_t uuid, size_t size, char_rw_cb read_cb, char_rw_cb write_cb);
+    esp_err_t AddCharateristic(uint8_t service_inst_id, uint16_t uuid,
+                               char_read_cb read_cb, char_write_cb write_cb);
 
     void GATTEventHandler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if, esp_ble_gatts_cb_param_t *param);
     void GAPEventHandler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param);
@@ -42,17 +48,24 @@ class GATTServer {
         esp_gatt_srvc_id_t service_id;
     };
 
+    struct LongMsg {
+        BufferPtr read_buf;
+        size_t read_buf_size;
+        uint32_t next_offset;
+        uint32_t next_trans_id;
+    };
+
     struct Charateristic {
         uint8_t service_inst_id;
         uint16_t char_handle;
         esp_bt_uuid_t char_uuid;
-        size_t size;
         // esp_gatt_perm_t perm;
         // esp_gatt_char_prop_t property;
         // uint16_t descr_handle;
         // esp_bt_uuid_t descr_uuid;
-        char_rw_cb read_cb;
-        char_rw_cb write_cb;
+        char_read_cb read_cb;
+        char_write_cb write_cb;
+        LongMsg read_long_msg;
     };
 
     esp_err_t InitBTStack();

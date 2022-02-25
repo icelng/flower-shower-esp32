@@ -6,6 +6,7 @@
 #include "sys/time.h"
 
 #define LOG_TAG_MOTOR "motor"
+#define LOG_TAG_MAIN "main"
 
 #define NVS_NS_MOTOR_TIMER "motor-timer"
 
@@ -16,7 +17,19 @@ namespace sd {
 
 using Json = nlohmann::json;
 
-static uint64_t get_curtime_ms() {
+struct BufferDeleter {
+    void operator() (uint8_t* buf) {
+        free(buf);
+    }
+};
+
+using BufferPtr = std::unique_ptr<uint8_t, BufferDeleter>;
+
+static inline auto create_unique_buf(size_t len) {
+	return BufferPtr((uint8_t*)malloc(len));
+}
+
+static inline uint64_t get_curtime_ms() {
     struct timeval tv_now;
     gettimeofday(&tv_now, NULL);
     int64_t time_ms = (int64_t)tv_now.tv_sec * 1000L + (int64_t)tv_now.tv_usec / 1000L;

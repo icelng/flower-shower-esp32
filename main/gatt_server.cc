@@ -227,7 +227,9 @@ void GATTServer::GATTEventHandler(esp_gatts_cb_event_t event, esp_gatt_if_t gatt
         break;
     }
     case ESP_GATTS_READ_EVT: {
-        ESP_LOGI(GATTS_TAG, "GATT_READ_EVT, conn_id %d, trans_id %d, handle %d\n", param->read.conn_id, param->read.trans_id, param->read.handle);
+        ESP_LOGI(GATTS_TAG, "GATT_READ_EVT, conn_id %d, trans_id %d, handle %d, is_long: %d, offset: %d\n",
+                 param->read.conn_id, param->read.trans_id, param->read.handle,
+                 param->read.is_long, param->read.offset);
 
         auto it = chars_.find(param->write.handle);
         assert(it != chars_.end());
@@ -235,11 +237,42 @@ void GATTServer::GATTEventHandler(esp_gatts_cb_event_t event, esp_gatt_if_t gatt
 
         esp_gatt_rsp_t rsp;
         memset(&rsp, 0, sizeof(esp_gatt_rsp_t));
-        rsp.attr_value.handle = param->read.handle;
-        rsp.attr_value.len = charateristic->size;
-        charateristic->read_cb(rsp.attr_value.value, charateristic->size);
+        auto* long_msg = &charateristic->read_long_msg;
+        if (charateristic->read_long_msg.next_trans_id == param->read.trans_id && param->read.is_long) {
+            auto buf = long_msg->read_buf.get();
+            size_t slice_size = std::min(long_msg->read_buf_size - long_msg->next_offset, kGATTMTU);
+            assert(buf != nullptr);
+
+            rsp.attr_value.handle = param->read.handle;
+            rsp.attr_value.len = slice_size;
+            memcpy(rsp.attr_value.value, &buf[charateristic->read_long_msg.next_offset], slice_size);
+
+            if (slice_size < kGATTMTU) {
+                long_msg->read_buf.reset();
+            } else {
+                long_msg->next_trans_id++;
+                long_msg->next_offset += slice_size;
+            }
+        } else {
+            long_msg->read_buf.reset();
+            long_msg->read_buf_size = 0;
+            charateristic->read_cb(&long_msg->read_buf, &long_msg->read_buf_size);
+
+            size_t slice_size = std::min(long_msg->read_buf_size, kGATTMTU);
+            rsp.attr_value.handle = param->read.handle;
+            rsp.attr_value.len = slice_size;
+            memcpy(rsp.attr_value.value, long_msg->read_buf.get(), slice_size);
+
+            if (long_msg->read_buf_size > kGATTMTU) {
+                long_msg->next_trans_id = (param->read.trans_id + 1);
+                long_msg->next_offset = kGATTMTU;
+            } else {
+                long_msg->next_trans_id = param->read.trans_id;
+            }
+        }
 
         esp_ble_gatts_send_response(gatts_if, param->read.conn_id, param->read.trans_id, ESP_GATT_OK, &rsp);
+
         break;
     }
     case ESP_GATTS_WRITE_EVT: {
@@ -248,7 +281,7 @@ void GATTServer::GATTEventHandler(esp_gatts_cb_event_t event, esp_gatt_if_t gatt
         auto it = chars_.find(param->write.handle);
         assert(it != chars_.end());
         auto charateristic = it->second.get();
-        size_t len = std::min(charateristic->size, (size_t)param->write.len);
+        size_t len = (size_t)param->write.len;
         charateristic->write_cb(param->write.value, len);
         // TODO(liang), implement notification
         // if (!param->write.is_prep &&
@@ -474,10 +507,8 @@ GATTServer::~GATTServer() {
 
 esp_err_t GATTServer::AddCharateristic(uint8_t service_inst_id,
                                        uint16_t uuid,
-                                       size_t size,
-                                       char_rw_cb read_cb,
-                                       char_rw_cb write_cb) {
-    assert(size <= ESP_GATT_MAX_ATTR_LEN);
+                                       char_read_cb read_cb,
+                                       char_write_cb write_cb) {
     if (service_inst_id >= services_.size()) {
         ESP_LOGE(GATTS_TAG, "failed to add charateristic, invalid service instance id: %d\n", service_inst_id);
         return ESP_ERR_INVALID_ARG;
@@ -515,7 +546,6 @@ esp_err_t GATTServer::AddCharateristic(uint8_t service_inst_id,
     new_char->service_inst_id = service_inst_id;
     new_char->char_handle = new_char_handle_;
     new_char->char_uuid = char_uuid;
-    new_char->size = size;
     new_char->read_cb = read_cb;
     new_char->write_cb = write_cb;
     auto it = chars_.find(new_char_handle_);
@@ -609,7 +639,7 @@ esp_err_t GATTServer::Init() {
         return ret;
     }
 
-    ret = esp_ble_gatt_set_local_mtu(500);
+    ret = esp_ble_gatt_set_local_mtu(kGATTMTU + 1);
     if (ret) {
         ESP_LOGE(GATTS_TAG, "set local  MTU failed, error code = %x", ret);
         return ret;
