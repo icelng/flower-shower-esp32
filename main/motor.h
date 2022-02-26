@@ -24,6 +24,8 @@ struct MotorTimerParam {
     float    speed;
 };
 
+static const uint64_t kSizeOfEncodedTimer = 29;
+
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(MotorTimerParam, timer_no, first_start_timestamp, period_ms, duration_ms, speed);
 
 // TODO(liang), abstract it
@@ -40,9 +42,12 @@ class Motor {
     // timer manager
     esp_err_t CreateTimer(MotorTimerParam* timer);
     esp_err_t ListTimers(std::vector<MotorTimerParam>* timers);
+    esp_err_t ListTimersEncoded(BufferPtr* buf, size_t* buf_len);
     esp_err_t ListTimersInJson(Json* json);
     esp_err_t ClearTimer(uint8_t timer_no);
     esp_err_t ClearAllTimers();
+
+    static void DecodeTimers(uint8_t* buf, size_t buf_len, std::vector<MotorTimerParam>* timers);
 
   private:
     enum MotorTimerCMD {
@@ -68,6 +73,7 @@ class Motor {
     std::string motor_name_;
     GATTServer* gatt_server_;
     nvs_handle_t nvs_handle_;
+    uint8_t num_timers_ = 0;
     std::vector<std::unique_ptr<MotorTimerParam>> timer_params_;
     std::vector<std::unique_ptr<MotorTimerCtx>> timer_ctxs_;
     std::unique_ptr<Mutex> mutex_;

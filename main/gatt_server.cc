@@ -57,15 +57,7 @@ static uint8_t adv_config_done = 0;
 #define adv_config_flag      (1 << 0)
 #define scan_rsp_config_flag (1 << 1)
 
-typedef struct {
-    uint8_t                 *prepare_buf;
-    int                     prepare_len;
-} prepare_type_env_t;
 
-static prepare_type_env_t a_prepare_write_env;
-
-void prepare_write(esp_gatt_if_t gatts_if, prepare_type_env_t *prepare_write_env, esp_ble_gatts_cb_param_t *param);
-void exec_write(prepare_type_env_t *prepare_write_env, esp_ble_gatts_cb_param_t *param);
 
 static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param) {
     assert(g_gatt_server != nullptr);
@@ -153,54 +145,49 @@ esp_err_t GATTServer::StartAdvertising() {
     return ESP_OK;
 }
 
-void prepare_write(esp_gatt_if_t gatts_if, prepare_type_env_t *prepare_write_env, esp_ble_gatts_cb_param_t *param){
+void GATTServer::PrepareWrite(esp_gatt_if_t gatts_if, Charateristic* charateristic, esp_ble_gatts_cb_param_t *param){
+    auto prepare_write_env = &charateristic->prepare_write_env;
     esp_gatt_status_t status = ESP_GATT_OK;
-    if (param->write.need_rsp) {
-        if (param->write.is_prep) {
-            ESP_LOGE(GATTS_TAG, "prepare write\n");
-            if (prepare_write_env->prepare_buf == NULL) {
-                prepare_write_env->prepare_buf = (uint8_t *)malloc(PREPARE_BUF_MAX_SIZE*sizeof(uint8_t));
-                prepare_write_env->prepare_len = 0;
-                if (prepare_write_env->prepare_buf == NULL) {
-                    ESP_LOGE(GATTS_TAG, "Gatt_server prep no mem\n");
-                    status = ESP_GATT_NO_RESOURCES;
-                }
-            } else {
-                if(param->write.offset > PREPARE_BUF_MAX_SIZE) {
-                    status = ESP_GATT_INVALID_OFFSET;
-                } else if ((param->write.offset + param->write.len) > PREPARE_BUF_MAX_SIZE) {
-                    status = ESP_GATT_INVALID_ATTR_LEN;
-                }
-            }
-
-            esp_gatt_rsp_t *gatt_rsp = (esp_gatt_rsp_t *)malloc(sizeof(esp_gatt_rsp_t));
-            gatt_rsp->attr_value.len = param->write.len;
-            gatt_rsp->attr_value.handle = param->write.handle;
-            gatt_rsp->attr_value.offset = param->write.offset;
-            gatt_rsp->attr_value.auth_req = ESP_GATT_AUTH_REQ_NONE;
-            memcpy(gatt_rsp->attr_value.value, param->write.value, param->write.len);
-            esp_err_t response_err = esp_ble_gatts_send_response(gatts_if, param->write.conn_id, param->write.trans_id, status, gatt_rsp);
-            if (response_err != ESP_OK){
-               ESP_LOGE(GATTS_TAG, "Send response error\n");
-            }
-            free(gatt_rsp);
-            if (status != ESP_GATT_OK){
-                return;
-            }
-            memcpy(prepare_write_env->prepare_buf + param->write.offset,
-                   param->write.value,
-                   param->write.len);
-            prepare_write_env->prepare_len += param->write.len;
-
-        } else {
-            esp_ble_gatts_send_response(gatts_if, param->write.conn_id, param->write.trans_id, status, NULL);
+    if (prepare_write_env->prepare_buf == NULL) {
+        prepare_write_env->prepare_buf = (uint8_t *)malloc(PREPARE_BUF_MAX_SIZE*sizeof(uint8_t));
+        prepare_write_env->prepare_len = 0;
+        if (prepare_write_env->prepare_buf == NULL) {
+            ESP_LOGE(GATTS_TAG, "Gatt_server prep no mem\n");
+            status = ESP_GATT_NO_RESOURCES;
+        }
+    } else {
+        if(param->write.offset > PREPARE_BUF_MAX_SIZE) {
+            status = ESP_GATT_INVALID_OFFSET;
+        } else if ((param->write.offset + param->write.len) > PREPARE_BUF_MAX_SIZE) {
+            status = ESP_GATT_INVALID_ATTR_LEN;
         }
     }
+
+    esp_gatt_rsp_t *gatt_rsp = (esp_gatt_rsp_t *)malloc(sizeof(esp_gatt_rsp_t));
+    gatt_rsp->attr_value.len = param->write.len;
+    gatt_rsp->attr_value.handle = param->write.handle;
+    gatt_rsp->attr_value.offset = param->write.offset;
+    gatt_rsp->attr_value.auth_req = ESP_GATT_AUTH_REQ_NONE;
+    memcpy(gatt_rsp->attr_value.value, param->write.value, param->write.len);
+    esp_err_t response_err = esp_ble_gatts_send_response(gatts_if, param->write.conn_id, param->write.trans_id, status, gatt_rsp);
+    if (response_err != ESP_OK){
+       ESP_LOGE(GATTS_TAG, "Send response error\n");
+    }
+    free(gatt_rsp);
+    if (status != ESP_GATT_OK){
+        return;
+    }
+    memcpy(prepare_write_env->prepare_buf + param->write.offset,
+           param->write.value,
+           param->write.len);
+    prepare_write_env->prepare_len += param->write.len;
+    prepare_write_env->next_trans_id = param->write.trans_id + 1;
 }
 
-void exec_write(prepare_type_env_t *prepare_write_env, esp_ble_gatts_cb_param_t *param) {
+void GATTServer::ExecWrite(Charateristic* charateristic, esp_ble_gatts_cb_param_t *param) {
+    auto prepare_write_env = &charateristic->prepare_write_env;
     if (param->exec_write.exec_write_flag == ESP_GATT_PREP_WRITE_EXEC) {
-        esp_log_buffer_hex(GATTS_TAG, prepare_write_env->prepare_buf, prepare_write_env->prepare_len);
+        charateristic->write_cb(prepare_write_env->prepare_buf, prepare_write_env->prepare_len);
     } else {
         ESP_LOGI(GATTS_TAG,"ESP_GATT_PREP_WRITE_CANCEL");
     }
@@ -276,71 +263,42 @@ void GATTServer::GATTEventHandler(esp_gatts_cb_event_t event, esp_gatt_if_t gatt
         break;
     }
     case ESP_GATTS_WRITE_EVT: {
-        ESP_LOGI(GATTS_TAG, "GATT_WRITE_EVT, conn_id %d, trans_id %d, handle %d", param->write.conn_id, param->write.trans_id, param->write.handle);
-        ESP_LOGI(GATTS_TAG, "GATT_WRITE_EVT, value len %d, value :", param->write.len);
+        ESP_LOGI(GATTS_TAG, "GATT_WRITE_EVT, conn_id %d, trans_id %d, handle %d, value_len: %d, is_prep: %d",
+                param->write.conn_id, param->write.trans_id, param->write.handle, param->write.len, param->write.is_prep);
         auto it = chars_.find(param->write.handle);
         assert(it != chars_.end());
         auto charateristic = it->second.get();
-        size_t len = (size_t)param->write.len;
-        charateristic->write_cb(param->write.value, len);
         // TODO(liang), implement notification
-        // if (!param->write.is_prep &&
-        //     descr_handle_ == param->write.handle &&
-        //     param->write.len == 2) {
-        //     uint16_t descr_value = param->write.value[1]<<8 | param->write.value[0];
-        //     if (descr_value == 0x0001){
-        //         if (a_property & ESP_GATT_CHAR_PROP_BIT_NOTIFY){
-        //             ESP_LOGI(GATTS_TAG, "notify enable");
-        //             uint8_t notify_data[15];
-        //             for (int i = 0; i < sizeof(notify_data); ++i)
-        //             {
-        //                 notify_data[i] = i%0xff;
-        //             }
-        //             //the size of notify_data[] need less than MTU size
-        //             esp_ble_gatts_send_indicate(gatts_if, param->write.conn_id, char_handle_,
-        //                                     sizeof(notify_data), notify_data, false);
-        //         }
-        //     }else if (descr_value == 0x0002){
-        //         if (a_property & ESP_GATT_CHAR_PROP_BIT_INDICATE){
-        //             ESP_LOGI(GATTS_TAG, "indicate enable");
-        //             uint8_t indicate_data[15];
-        //             for (int i = 0; i < sizeof(indicate_data); ++i)
-        //             {
-        //                 indicate_data[i] = i%0xff;
-        //             }
-        //             //the size of indicate_data[] need less than MTU size
-        //             esp_ble_gatts_send_indicate(gatts_if, param->write.conn_id, char_handle_,
-        //                                     sizeof(indicate_data), indicate_data, true);
-        //         }
-        //     }
-        //     else if (descr_value == 0x0000){
-        //         ESP_LOGI(GATTS_TAG, "notify/indicate disable ");
-        //     } else {
-        //         ESP_LOGE(GATTS_TAG, "unknown descr value");
-        //         esp_log_buffer_hex(GATTS_TAG, param->write.value, param->write.len);
-        //     }
-        // }
-        if (param->write.need_rsp) {
-            esp_gatt_status_t status = ESP_GATT_OK;
-            if (param->write.is_prep) {
-                // TODO(liang), implement prepare write
-                ESP_LOGE(GATTS_TAG, "prepare write is not supported now!\n");
-                status = ESP_GATT_REQ_NOT_SUPPORTED;
-                // prepare_write(gatts_if, &a_prepare_write_env, param);
+        if (param->write.is_prep) {
+            PrepareWrite(gatts_if, charateristic, param);
+        } else if (param->write.need_rsp) {
+            charateristic->write_cb(param->write.value, param->write.len);
+            if (param->write.need_rsp) {
+                esp_gatt_status_t status = ESP_GATT_OK;
+                esp_ble_gatts_send_response(gatts_if,
+                                            param->write.conn_id,
+                                            param->write.trans_id,
+                                            status,
+                                            NULL);
             }
-            esp_ble_gatts_send_response(gatts_if,
-                                        param->write.conn_id,
-                                        param->write.trans_id,
-                                        status,
-                                        NULL);
         }
         break;
     }
-    case ESP_GATTS_EXEC_WRITE_EVT:
-        ESP_LOGI(GATTS_TAG,"ESP_GATTS_EXEC_WRITE_EVT");
+    case ESP_GATTS_EXEC_WRITE_EVT: {
+        ESP_LOGI(GATTS_TAG,"ESP_GATTS_EXEC_WRITE_EVT, conn_id %d, trans_id %d",
+                 param->exec_write.conn_id, param->exec_write.trans_id);
+        // so ugly!! so tricky!! the charateristic should not be found by trans_id!!
+        Charateristic* charateristic = nullptr;
+        for (auto& it : chars_) {
+            if (it.second->prepare_write_env.next_trans_id == param->exec_write.trans_id) {
+                charateristic = it.second.get();
+            }
+        }
+        assert(charateristic != nullptr);
+        ExecWrite(charateristic, param);
         esp_ble_gatts_send_response(gatts_if, param->write.conn_id, param->write.trans_id, ESP_GATT_OK, NULL);
-        exec_write(&a_prepare_write_env, param);
         break;
+    }
     case ESP_GATTS_MTU_EVT:
         ESP_LOGI(GATTS_TAG, "ESP_GATTS_MTU_EVT, MTU %d", param->mtu.mtu);
         break;

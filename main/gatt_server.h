@@ -42,6 +42,11 @@ class GATTServer {
     void GAPEventHandler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param);
 
   private:
+    typedef struct {
+        uint8_t* prepare_buf;
+        int      prepare_len;
+        uint32_t next_trans_id;
+    } prepare_type_env_t;
 
     struct Service {
         uint16_t service_handle;
@@ -66,10 +71,14 @@ class GATTServer {
         char_read_cb read_cb;
         char_write_cb write_cb;
         LongMsg read_long_msg;
+        prepare_type_env_t prepare_write_env;
     };
 
     esp_err_t InitBTStack();
     esp_err_t StartAdvertising();
+
+    static void PrepareWrite(esp_gatt_if_t gatts_if, Charateristic* charateristic, esp_ble_gatts_cb_param_t *param);
+    static void ExecWrite(Charateristic* charateristic, esp_ble_gatts_cb_param_t *param);
 
     uint32_t app_id_;
     std::string device_name_;

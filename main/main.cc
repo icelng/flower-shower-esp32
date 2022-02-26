@@ -47,8 +47,16 @@ void hello_dream(void* arg) {
                     *read_buf = create_unique_buf(*len);
                     (read_buf->get())[0] = 'c';
                 },
-                [&motor, &motor_param](uint8_t* write_value, size_t len) {
-                    ESP_ERROR_CHECK(motor->CreateTimer(&motor_param));
+                [&motor](uint8_t* buf, size_t len) {
+                    std::vector<MotorTimerParam> params;
+                    Motor::DecodeTimers(buf, len, &params);
+                    for (auto& param : params) {
+                        Json j;
+                        to_json(j, param);
+                        ESP_LOGI(LOG_TAG_MAIN, "create timer: %s\n", j.dump().c_str());
+                        ESP_ERROR_CHECK(motor->CreateTimer(&param));
+                    }
+                    // ESP_ERROR_CHECK(motor->CreateTimer(&motor_param));
                 }));
     ESP_ERROR_CHECK(gatt_server->AddCharateristic(service_inst_id, kGATTCharUUIDClearMotorTimer,
                 [](BufferPtr*, size_t*) {},
@@ -64,13 +72,15 @@ void hello_dream(void* arg) {
     //             }));
     ESP_ERROR_CHECK(gatt_server->AddCharateristic(service_inst_id, kGATTCharUUIDListMotorTimers,
                 [&motor](BufferPtr* read_buf, size_t* len) {
-                    Json j;
-                    ESP_ERROR_CHECK(motor->ListTimersInJson(&j));
-                    auto timers_json_str = j.dump();
-                    ESP_LOGI(LOG_TAG_MAIN, "list timers: %s\n", timers_json_str.c_str());
-                    *len = timers_json_str.size() + 1;
-                    *read_buf = create_unique_buf(*len);
-                    memcpy((*read_buf).get(), timers_json_str.c_str(), *len);
+                    ESP_ERROR_CHECK(motor->ListTimersEncoded(read_buf, len));
+                    ESP_LOGI(LOG_TAG_MAIN, "list timers encoded, len: %d\n", *len);
+                    // Json j;
+                    // ESP_ERROR_CHECK(motor->ListTimersInJson(&j));
+                    // auto timers_json_str = j.dump();
+                    // ESP_LOGI(LOG_TAG_MAIN, "list timers: %s\n", timers_json_str.c_str());
+                    // *len = timers_json_str.size() + 1;
+                    // *read_buf = create_unique_buf(*len);
+                    // memcpy((*read_buf).get(), timers_json_str.c_str(), *len);
                 },
                 [](uint8_t* write_value, size_t len) {
                 }));

@@ -47,7 +47,10 @@ esp_err_t Motor::Init() {
     };
 
     for (auto& param : timer_params_) {
-        if (param.get() != nullptr) ESP_ERROR_CHECK(InitTimerContext(param.get()));
+        if (param.get() != nullptr) {
+            num_timers_++;
+            ESP_ERROR_CHECK(InitTimerContext(param.get()));
+        }
     }
 
     ESP_LOGI(LOG_TAG_MOTOR, "[INIT MOTOR END] motor_name: %s\n", motor_name_.c_str());
@@ -86,6 +89,7 @@ esp_err_t Motor::CreateTimer(MotorTimerParam* param) {
     sprintf(nvs_timer_key, "%d", new_timer_no);
     RETURN_IF_ERROR(nvs_set_blob(nvs_handle_, nvs_timer_key, param, sizeof(MotorTimerParam)));
 
+    num_timers_++;
     timer_params_[new_timer_no].reset(new MotorTimerParam(*param));
 
     return InitTimerContext(param);
@@ -199,6 +203,52 @@ esp_err_t Motor::ListTimers(std::vector<MotorTimerParam>* timers) {
     return ESP_OK;
 }
 
+esp_err_t Motor::ListTimersEncoded(BufferPtr* buf, size_t* buf_len) {
+    /*|-num_timers(1)-|-timer_no(1)-|-first_start_timestamp(8)-|-period_ms(8)-|-duration_ms(8)-|-speed(4)-|*/
+
+    MutexGuard g(mutex_.get());
+
+    if (!is_initiated_) return ESP_ERR_INVALID_STATE;
+
+    *buf_len = num_timers_ * kSizeOfEncodedTimer + 1;
+    *buf = create_unique_buf(*buf_len);
+
+    memcpy(buf->get(), &num_timers_, 1);
+
+    uint64_t offset = 1;
+    for (auto& timer : timer_params_) {
+        if (timer.get() == nullptr) continue;
+        memcpy(buf->get() + offset, &timer->timer_no, 1);
+        memcpy(buf->get() + offset + 1, &timer->first_start_timestamp, 8);
+        memcpy(buf->get() + offset + 9, &timer->period_ms, 8);
+        memcpy(buf->get() + offset + 17, &timer->duration_ms, 8);
+        memcpy(buf->get() + offset + 25, &timer->speed, 4);
+        offset += kSizeOfEncodedTimer;
+    }
+
+    return ESP_OK;
+}
+
+void Motor::DecodeTimers(uint8_t* buf, size_t buf_len, std::vector<MotorTimerParam>* timers) {
+    /*|-num_timers(1)-|-timer_no(1)-|-first_start_timestamp(8)-|-period_ms(8)-|-duration_ms(8)-|-speed(4)-|*/
+
+    uint8_t num_timers = buf[0];
+    assert(num_timers <= kMaxNumTimers);
+
+    uint64_t offset = 1;
+    for (uint8_t i = 0; i < num_timers; i++) {
+        assert(offset + kSizeOfEncodedTimer <= buf_len);
+        MotorTimerParam param;
+        param.timer_no = buf[offset];
+        param.first_start_timestamp = *((uint64_t*)&buf[offset + 1]);
+        param.period_ms = *((uint64_t*)&buf[offset + 9]);
+        param.duration_ms = *((uint64_t*)&buf[offset + 17]);
+        param.speed = *((float*)&buf[offset + 25]);
+        timers->push_back(param);
+        offset += kSizeOfEncodedTimer;
+    }
+}
+
 esp_err_t Motor::ListTimersInJson(Json* json) {
     assert(json != nullptr);
     MutexGuard g(mutex_.get());
@@ -231,6 +281,7 @@ esp_err_t Motor::ClearTimer(uint8_t timer_no) {
 
     timer_ctxs_[timer_no].reset();
     timer_params_[timer_no].reset();
+    num_timers_--;
 
     // erase timer param in nvs
     char nvs_timer_key[4];
