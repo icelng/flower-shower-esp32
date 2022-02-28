@@ -1,5 +1,6 @@
 #include "motor.h"
 
+#include "driver/gpio.h"
 #include "esp_log.h"
 
 namespace sd {
@@ -53,6 +54,16 @@ esp_err_t Motor::Init() {
         }
     }
 
+    gpio_config_t config = {
+        .pin_bit_mask = GPIO_SEL_32 | GPIO_SEL_33,
+        .mode = GPIO_MODE_OUTPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+    ESP_ERROR_CHECK(gpio_config(&config));
+
+
     ESP_LOGI(LOG_TAG_MOTOR, "[INIT MOTOR END] motor_name: %s\n", motor_name_.c_str());
 
     is_initiated_ = true;
@@ -60,10 +71,16 @@ esp_err_t Motor::Init() {
 }
 
 esp_err_t Motor::Start(float speed) {
+    ESP_LOGI(LOG_TAG_MOTOR, "[START MOTOR] motor_name: %s, speed: %f\n", motor_name_.c_str(), speed);
+    gpio_set_level(GPIO_NUM_32, 1);
+    gpio_set_level(GPIO_NUM_33, 0);
     return ESP_OK;
 }
 
 esp_err_t Motor::Stop() {
+    ESP_LOGI(LOG_TAG_MOTOR, "[STOP MOTOR] motor_name: %s\n", motor_name_.c_str());
+    gpio_set_level(GPIO_NUM_32, 0);
+    gpio_set_level(GPIO_NUM_33, 0);
     return ESP_OK;
 }
 

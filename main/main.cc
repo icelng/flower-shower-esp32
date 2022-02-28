@@ -20,7 +20,7 @@ namespace sd {
 const static uint16_t kGATTServiceUUID = 0x00FF;
 const static uint16_t kGATTCharUUIDCreateMotorTimer = 0xFF01;
 const static uint16_t kGATTCharUUIDClearMotorTimer = 0xFF02;
-const static uint16_t kGATTCharUUIDClearAllMotorTimers = 0xFF03;
+const static uint16_t kGATTCharUUIDControlMotor = 0xFF03;
 const static uint16_t kGATTCharUUIDListMotorTimers = 0xFF04;
 // const static uint16_t kGATTCharUUIDStartMotor = 0xFF03;
 // const static uint16_t kGATTCharUUIDStopMotor = 0xFF04;
@@ -61,15 +61,19 @@ void hello_dream(void* arg) {
     ESP_ERROR_CHECK(gatt_server->AddCharateristic(service_inst_id, kGATTCharUUIDClearMotorTimer,
                 [](BufferPtr*, size_t*) {},
                 [&motor](uint8_t* write_value, size_t len) {
+                    if (len != 1) return;
                     ESP_ERROR_CHECK(motor->ClearTimer(write_value[0]));
                 }));
-    // ESP_ERROR_CHECK(gatt_server->AddCharateristic(service_inst_id, kGATTCharUUIDClearAllMotorTimers, 1,
-    //             [](uint8_t* read_value, size_t len) {
-    //                 read_value[0] = 0xcc;
-    //             },
-    //             [&motor](uint8_t* write_value, size_t len) {
-    //                 ESP_ERROR_CHECK(motor->ClearAllTimers());
-    //             }));
+    ESP_ERROR_CHECK(gatt_server->AddCharateristic(service_inst_id, kGATTCharUUIDControlMotor,
+                [](BufferPtr*, size_t*) {},
+                [&motor](uint8_t* write_value, size_t len) {
+                    if (len != 1) return;
+                    if (write_value[0] == 1) {
+                        ESP_ERROR_CHECK(motor->Start(1));
+                    } else if (write_value[0] == 0) {
+                        ESP_ERROR_CHECK(motor->Stop());
+                    }
+                }));
     ESP_ERROR_CHECK(gatt_server->AddCharateristic(service_inst_id, kGATTCharUUIDListMotorTimers,
                 [&motor](BufferPtr* read_buf, size_t* len) {
                     ESP_ERROR_CHECK(motor->ListTimersEncoded(read_buf, len));
