@@ -25,9 +25,7 @@
 #define GATTS_TAG "SILICON_DREAMS"
 
 #define GATTS_SERVICE_UUID          0x00FF
-#define GATTS_CHAR_UUID_TEST_A      0xFF01
-#define GATTS_DESCR_UUID_TEST_A     0x3333
-#define GATTS_NUM_HANDLE            16
+#define GATTS_NUM_HANDLE            32
 
 #define TEST_DEVICE_NAME            "SILICON_DREAMS"
 #define TEST_MANUFACTURER_DATA_LEN  17
@@ -265,6 +263,17 @@ void GATTServer::GATTEventHandler(esp_gatts_cb_event_t event, esp_gatt_if_t gatt
     case ESP_GATTS_WRITE_EVT: {
         ESP_LOGI(GATTS_TAG, "GATT_WRITE_EVT, conn_id %d, trans_id %d, handle %d, value_len: %d, is_prep: %d",
                 param->write.conn_id, param->write.trans_id, param->write.handle, param->write.len, param->write.is_prep);
+        auto cccd_it = cccds_.find(param->write.handle);
+        if (cccd_it != cccds_.end()) {
+            auto cccd_handle = cccd_it->first;
+            auto char_handle = cccd_it->second;
+            auto char_it = chars_.find(param->write.handle);
+            assert(char_it != chars_.end());
+            auto charateristic = char_it->second.get();
+
+            uint16_t cccd_value= param->write.value[1] << 8 | param->write.value[0];
+
+        }
         auto it = chars_.find(param->write.handle);
         assert(it != chars_.end());
         auto charateristic = it->second.get();
@@ -309,60 +318,46 @@ void GATTServer::GATTEventHandler(esp_gatts_cb_event_t event, esp_gatt_if_t gatt
         auto service = services_[param->create.service_id.id.inst_id].get();
         service->service_handle = param->create.service_handle;
         esp_ble_gatts_start_service(service->service_handle);
-
-        // char_uuid_.len = ESP_UUID_LEN_16;
-        // char_uuid_.uuid.uuid16 = GATTS_CHAR_UUID_TEST_A;
-        // a_property = ESP_GATT_CHAR_PROP_BIT_READ | ESP_GATT_CHAR_PROP_BIT_WRITE | ESP_GATT_CHAR_PROP_BIT_NOTIFY;
-        // esp_err_t add_char_ret = esp_ble_gatts_add_char(service_handle_, &char_uuid_,
-        //                                                 ESP_GATT_PERM_READ | ESP_GATT_PERM_WRITE,
-        //                                                 a_property,
-        //                                                 &gatts_demo_char1_val, NULL);
-        // if (add_char_ret){
-        //     ESP_LOGE(GATTS_TAG, "add char failed, error code =%x",add_char_ret);
-        // }
-
         break;
     }
     case ESP_GATTS_ADD_INCL_SRVC_EVT:
         break;
     case ESP_GATTS_ADD_CHAR_EVT: {
-        // uint16_t length = 0;
-        // const uint8_t *prf_char;
-
         ESP_LOGI(GATTS_TAG, "ADD_CHAR_EVT, status %d,  attr_handle %d, service_handle %d\n",
                 param->add_char.status, param->add_char.attr_handle, param->add_char.service_handle);
         add_char_status_ = param->add_char.status;
         new_char_handle_ = param->add_char.attr_handle;
-        xEventGroupSetBits(event_group_, kEGAddCharComplete);
-        // descr_uuid_.len = ESP_UUID_LEN_16;
-        // descr_uuid_.uuid.uuid16 = ESP_GATT_UUID_CHAR_CLIENT_CONFIG;
-        // esp_err_t get_attr_ret = esp_ble_gatts_get_attr_value(param->add_char.attr_handle,  &length, &prf_char);
-        // if (get_attr_ret == ESP_FAIL){
-        //     ESP_LOGE(GATTS_TAG, "ILLEGAL HANDLE");
-        // }
 
-        // ESP_LOGI(GATTS_TAG, "the gatts demo char length = %x\n", length);
-        // for(int i = 0; i < length; i++){
-        //     ESP_LOGI(GATTS_TAG, "prf_char[%x] =%x\n",i,prf_char[i]);
-        // }
-        // esp_err_t add_descr_ret = esp_ble_gatts_add_char_descr(service_handle_, &descr_uuid_,
-        //                                                         ESP_GATT_PERM_READ | ESP_GATT_PERM_WRITE, NULL, NULL);
-        // if (add_descr_ret){
-        //     ESP_LOGE(GATTS_TAG, "add char descr failed, error code =%x", add_descr_ret);
-        // }
-    }
-    case ESP_GATTS_ADD_CHAR_DESCR_EVT:
-        // descr_handle_ = param->add_char_descr.attr_handle;
-        // ESP_LOGI(GATTS_TAG, "ADD_DESCR_EVT, status %d, attr_handle %d, service_handle %d\n",
-        //          param->add_char_descr.status, param->add_char_descr.attr_handle, param->add_char_descr.service_handle);
+        esp_bt_uuid_t cccd_uuid;
+        cccd_uuid.len = ESP_UUID_LEN_16;
+        cccd_uuid.uuid.uuid16 = ESP_GATT_UUID_CHAR_CLIENT_CONFIG;
+        auto ret = esp_ble_gatts_add_char_descr(param->add_char.service_handle,
+                                                &cccd_uuid,
+                                                ESP_GATT_PERM_READ | ESP_GATT_PERM_WRITE, NULL, NULL);
+        if (ret){
+            ESP_LOGE(GATTS_TAG, "add char descr failed, error code =%x", ret);
+        }
+
         break;
+    }
+    case ESP_GATTS_ADD_CHAR_DESCR_EVT: {
+        ESP_LOGI(GATTS_TAG, "ADD_DESCR_EVT, status %d, attr_handle %d, service_handle %d\n",
+                 param->add_char_descr.status, param->add_char_descr.attr_handle, param->add_char_descr.service_handle);
+
+        new_cccd_handle_ = param->add_char_descr.attr_handle;
+
+        xEventGroupSetBits(event_group_, kEGAddCharComplete);
+
+        break;
+    }
     case ESP_GATTS_DELETE_EVT:
         break;
-    case ESP_GATTS_START_EVT:
+    case ESP_GATTS_START_EVT: {
         ESP_LOGI(GATTS_TAG, "SERVICE_START_EVT, status %d, service_handle %d\n",
                  param->start.status, param->start.service_handle);
         xEventGroupSetBits(event_group_, kEGServiceCreateComplete);
         break;
+    }
     case ESP_GATTS_STOP_EVT:
         break;
     case ESP_GATTS_CONNECT_EVT: {
@@ -504,11 +499,14 @@ esp_err_t GATTServer::AddCharateristic(uint8_t service_inst_id,
     new_char->service_inst_id = service_inst_id;
     new_char->char_handle = new_char_handle_;
     new_char->char_uuid = char_uuid;
+    new_char->cccd_handle = new_cccd_handle_;
     new_char->read_cb = read_cb;
     new_char->write_cb = write_cb;
     auto it = chars_.find(new_char_handle_);
     assert(it == chars_.end());
     chars_.emplace(new_char_handle_, new_char);
+
+    cccds_[new_cccd_handle_] = new_char_handle_;
 
     return ESP_OK;
 }

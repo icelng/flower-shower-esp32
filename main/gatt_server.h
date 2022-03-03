@@ -64,6 +64,9 @@ class GATTServer {
         uint8_t service_inst_id;
         uint16_t char_handle;
         esp_bt_uuid_t char_uuid;
+        uint16_t cccd_handle;
+        bool notification_enabled;
+        bool indication_enabled;
         // esp_gatt_perm_t perm;
         // esp_gatt_char_prop_t property;
         // uint16_t descr_handle;
@@ -76,6 +79,7 @@ class GATTServer {
 
     esp_err_t InitBTStack();
     esp_err_t StartAdvertising();
+    void HandleCCCDWrite(uint16_t cccd_handle, uint16_t char_handle);
 
     static void PrepareWrite(esp_gatt_if_t gatts_if, Charateristic* charateristic, esp_ble_gatts_cb_param_t *param);
     static void ExecWrite(Charateristic* charateristic, esp_ble_gatts_cb_param_t *param);
@@ -98,7 +102,9 @@ class GATTServer {
 
     // charateristics
     std::unordered_map<uint16_t, std::unique_ptr<struct Charateristic>> chars_;
+    std::unordered_map<uint16_t, uint16_t> cccds_;
     uint16_t new_char_handle_;
+    uint16_t new_cccd_handle_;
 
     // event group
     static const TickType_t kEGTimeout = 3000 / portTICK_PERIOD_MS;
