@@ -1,6 +1,7 @@
 #include "gatt_server.h"
 
 #include "motor.h"
+#include "rtc_ds3231.h"
 
 #include "esp_debug_helpers.h"
 #include "esp_log.h"
@@ -27,6 +28,9 @@ const static uint16_t kGATTCharUUIDListMotorTimers = 0xFF04;
 
 void hello_dream(void* arg) {
     printf("Hello silicon dreams!!!\n");
+
+    RTCDS3231* rtc = new RTCDS3231();
+    rtc->Init();
 
     auto motor = std::make_unique<Motor>("silicon motor");
     motor->Init();
@@ -89,9 +93,9 @@ void hello_dream(void* arg) {
                 [](uint8_t* write_value, size_t len) {
                 }));
 
-    uint32_t cnt = 0;
+    RTCDS3231::Time time;
     while (true) {
-        printf("Heart Beat%d\n", cnt++);
+        rtc->GetCurrentTime(&time);
         vTaskDelay(1000 / portTICK_PERIOD_MS);
     }
 }

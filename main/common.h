@@ -7,6 +7,7 @@
 
 #define LOG_TAG_MOTOR "motor"
 #define LOG_TAG_MAIN "main"
+#define LOG_TAG_RTC_DS3231 "rtc_ds3231"
 
 #define NVS_NS_MOTOR_TIMER "motor-timer"
 
