@@ -1,7 +1,7 @@
 #include "motor.h"
 
-#include "driver/gpio.h"
 #include "esp_log.h"
+#include "driver/ledc.h"
 
 namespace sd {
 
@@ -55,7 +55,7 @@ esp_err_t Motor::Init() {
     }
 
     gpio_config_t config = {
-        .pin_bit_mask = GPIO_SEL_32 | GPIO_SEL_33,
+        .pin_bit_mask = GPIO_SEL_12 | GPIO_SEL_14 | GPIO_SEL_26 | GPIO_SEL_27,
         .mode = GPIO_MODE_OUTPUT,
         .pull_up_en = GPIO_PULLUP_ENABLE,
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
@@ -63,6 +63,32 @@ esp_err_t Motor::Init() {
     };
     ESP_ERROR_CHECK(gpio_config(&config));
 
+
+    // Prepare and then apply the LEDC PWM timer configuration
+    ledc_timer_config_t ledc_timer = {
+        .speed_mode       = LEDC_LOW_SPEED_MODE,
+        .duty_resolution  = LEDC_TIMER_13_BIT,
+        .timer_num        = LEDC_TIMER_0,
+        .freq_hz          = 5000,  // Set output frequency at 5 kHz
+        .clk_cfg          = LEDC_AUTO_CLK
+    };
+    ESP_ERROR_CHECK(ledc_timer_config(&ledc_timer));
+
+    // Prepare and then apply the LEDC PWM channel configuration
+    ledc_channel_config_t ledc_channel = {
+        .gpio_num       = 12,
+        .speed_mode     = LEDC_LOW_SPEED_MODE,
+        .channel        = LEDC_CHANNEL_0,
+        .intr_type      = LEDC_INTR_DISABLE,
+        .timer_sel      = LEDC_TIMER_0,
+        .duty           = 0, // Set duty to 0%
+        .hpoint         = 0
+    };
+    ESP_ERROR_CHECK(ledc_channel_config(&ledc_channel));
+
+    gpio_set_level(kGPIOMotorIN1, 0);
+    gpio_set_level(kGPIOMotorIN2, 0);
+    gpio_set_level(kGPIOMotorStby, 1);
 
     ESP_LOGI(LOG_TAG_MOTOR, "[INIT MOTOR END] motor_name: %s\n", motor_name_.c_str());
 
@@ -72,15 +98,15 @@ esp_err_t Motor::Init() {
 
 esp_err_t Motor::Start(float speed) {
     ESP_LOGI(LOG_TAG_MOTOR, "[START MOTOR] motor_name: %s, speed: %f\n", motor_name_.c_str(), speed);
-    gpio_set_level(GPIO_NUM_32, 1);
-    gpio_set_level(GPIO_NUM_33, 0);
+    gpio_set_level(kGPIOMotorIN2, 1);
+    ESP_ERROR_CHECK(ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 4096));
+    ESP_ERROR_CHECK(ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0));
     return ESP_OK;
 }
 
 esp_err_t Motor::Stop() {
     ESP_LOGI(LOG_TAG_MOTOR, "[STOP MOTOR] motor_name: %s\n", motor_name_.c_str());
-    gpio_set_level(GPIO_NUM_32, 0);
-    gpio_set_level(GPIO_NUM_33, 0);
+    gpio_set_level(kGPIOMotorIN2, 0);
     return ESP_OK;
 }
 

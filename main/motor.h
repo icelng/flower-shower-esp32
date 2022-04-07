@@ -4,6 +4,7 @@
 
 #include "common.h"
 
+#include "driver/gpio.h"
 #include "esp_err.h"
 #include "freertos/semphr.h"
 #include "freertos/timers.h"
@@ -77,6 +78,12 @@ class Motor {
     std::vector<std::unique_ptr<MotorTimerParam>> timer_params_;
     std::vector<std::unique_ptr<MotorTimerCtx>> timer_ctxs_;
     std::unique_ptr<Mutex> mutex_;
+
+    const static gpio_num_t kGPIOMotorIN1  = GPIO_NUM_27;
+    const static gpio_num_t kGPIOMotorIN2  = GPIO_NUM_14;
+    const static gpio_num_t kGPIOMotorPWM  = GPIO_NUM_12;
+    const static gpio_num_t kGPIOMotorStby = GPIO_NUM_26;
+
 
 };  // class Motor
 
