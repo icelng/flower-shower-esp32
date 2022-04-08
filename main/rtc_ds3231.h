@@ -13,6 +13,7 @@ class RTCDS3231 {
         uint8_t hours;
         uint8_t minutes;
         uint8_t seconds;
+        time_t timestamp_s;
     };
 
     RTCDS3231();
@@ -20,6 +21,7 @@ class RTCDS3231 {
 
     esp_err_t Init();
     esp_err_t GetCurrentTime(Time* time);
+    esp_err_t SetTime(time_t timestamp_s);
     esp_err_t SetTime(Time* time);
 
   private:
@@ -74,11 +76,13 @@ class RTCDS3231 {
 
 
     // TODO(yangliang), make the codes about i2c initialization independent, to support more various i2c peripherals
-    static const uint64_t kI2CSDAIONum = 18;
-    static const uint64_t kI2CSCLIONum = 19;
+    static const uint64_t kI2CSDAIONum = 16;
+    static const uint64_t kI2CSCLIONum = 4;
     static const uint64_t kI2CFreqHZ = 400000;
     static const uint64_t kI2CMasterPort = 0;
     static const uint64_t kI2CMasterTimeoutMs = 3000;
+
+    static const int kTimeZone = 8;  // GMT+8
 
 };  // class RTCDS3231
 

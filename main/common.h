@@ -30,11 +30,37 @@ static inline auto create_unique_buf(size_t len) {
 	return BufferPtr((uint8_t*)malloc(len));
 }
 
+static time_t to_timestamp(int year, int mon, int day, int hour, int min, int second) {
+	struct tm tm;
+	tm.tm_year = year - 1900;
+	tm.tm_mon = mon - 1;
+	tm.tm_mday = day;
+    tm.tm_hour = hour;
+    tm.tm_min = min;
+    tm.tm_sec = second;
+    return mktime(&tm);;
+}
+
 static inline uint64_t get_curtime_ms() {
     struct timeval tv_now;
     gettimeofday(&tv_now, NULL);
-    int64_t time_ms = (int64_t)tv_now.tv_sec * 1000L + (int64_t)tv_now.tv_usec / 1000L;
+    uint64_t time_ms = (uint64_t)tv_now.tv_sec * 1000UL + (uint64_t)tv_now.tv_usec / 1000UL;
     return time_ms;
+}
+
+static inline uint64_t get_curtime_s() {
+    struct timeval tv_now;
+    gettimeofday(&tv_now, NULL);
+    return tv_now.tv_sec;
+}
+
+static inline void set_system_time(time_t timestamp_s) {
+    struct timeval tv;
+    struct timezone tz;
+    tv.tv_sec = timestamp_s;
+    tv.tv_usec = 0;
+    tz.tz_minuteswest = -480;  // GMT+8
+    settimeofday(&tv, &tz);
 }
 
 class Mutex {

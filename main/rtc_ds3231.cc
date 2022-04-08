@@ -84,11 +84,37 @@ esp_err_t RTCDS3231::GetCurrentTime(Time* time) {
     time->year = ((reg_year & kDS3231RegMaskTenYear) >> kDS3231RegBitStartTenYear) * 10 +
                         ((reg_year & kDS3231RegMaskYear) >> kDS3231RegBitStartYear) + kYearFrom;
 
+    time->timestamp_s = to_timestamp(time->year, time->month, time->date,
+                                     time->hours, time->minutes, time->seconds);
+    time->timestamp_s -= (3600 * kTimeZone);
+
     ESP_LOGI(LOG_TAG_RTC_DS3231, "[GET RTC DS3231 TIME] %d %d %d %d:%d:%d\n",
                     time->year, time->month, time->date, time->hours, time->minutes, time->seconds);
 
     return ESP_OK;
 }
+
+
+esp_err_t RTCDS3231::SetTime(time_t timestamp_s) {
+    timestamp_s += (3600 * kTimeZone);
+
+    struct tm ts;
+    ts = *localtime(&timestamp_s);
+
+    Time t;
+    t.year = ts.tm_year + 1900;
+    t.month = ts.tm_mon + 1;
+    t.date = ts.tm_mday;
+    t.hours = ts.tm_hour;
+    t.minutes = ts.tm_min;
+    t.seconds = ts.tm_sec;
+
+    ESP_LOGI(LOG_TAG_RTC_DS3231, "[SET RTC DS3231 TIME] %d %d %d %d:%d:%d\n",
+                    t.year, t.month, t.date, t.hours, t.minutes, t.seconds);
+
+    return SetTime(&t);
+}
+
 
 esp_err_t RTCDS3231::SetTime(Time* time) {
     if (time->year < kYearFrom) {

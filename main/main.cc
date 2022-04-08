@@ -23,8 +23,9 @@ const static uint16_t kGATTCharUUIDCreateMotorTimer = 0xFF01;
 const static uint16_t kGATTCharUUIDClearMotorTimer = 0xFF02;
 const static uint16_t kGATTCharUUIDControlMotor = 0xFF03;
 const static uint16_t kGATTCharUUIDListMotorTimers = 0xFF04;
-// const static uint16_t kGATTCharUUIDStartMotor = 0xFF03;
-// const static uint16_t kGATTCharUUIDStopMotor = 0xFF04;
+
+const static uint16_t kGATTServiceSystemTime = 0x00FE;
+const static uint16_t kGATTCharUUIDSystemTime = 0xFE01;
 
 void hello_dream(void* arg) {
     printf("Hello silicon dreams!!!\n");
@@ -34,12 +35,6 @@ void hello_dream(void* arg) {
 
     auto motor = std::make_unique<Motor>("silicon motor");
     motor->Init();
-
-    MotorTimerParam motor_param;
-    motor_param.first_start_timestamp = get_curtime_ms();
-    motor_param.period_ms = 8000;
-    motor_param.duration_ms = 4000;
-    motor_param.speed = 0.5;
 
     uint8_t service_inst_id;
     auto gatt_server = GATTServer::RegisterServer("SILICON DREAMS");
@@ -51,7 +46,7 @@ void hello_dream(void* arg) {
                     *read_buf = create_unique_buf(*len);
                     (read_buf->get())[0] = 'c';
                 },
-                [&motor](uint8_t* buf, size_t len) {
+                [=, &motor](uint8_t* buf, size_t len) {
                     std::vector<MotorTimerParam> params;
                     Motor::DecodeTimers(buf, len, &params);
                     for (auto& param : params) {
@@ -60,7 +55,6 @@ void hello_dream(void* arg) {
                         ESP_LOGI(LOG_TAG_MAIN, "create timer: %s\n", j.dump().c_str());
                         ESP_ERROR_CHECK(motor->CreateTimer(&param));
                     }
-                    // ESP_ERROR_CHECK(motor->CreateTimer(&motor_param));
                 }));
     ESP_ERROR_CHECK(gatt_server->AddCharateristic(service_inst_id, kGATTCharUUIDClearMotorTimer,
                 [](BufferPtr*, size_t*) {},
@@ -82,18 +76,27 @@ void hello_dream(void* arg) {
                 [&motor](BufferPtr* read_buf, size_t* len) {
                     ESP_ERROR_CHECK(motor->ListTimersEncoded(read_buf, len));
                     ESP_LOGI(LOG_TAG_MAIN, "list timers encoded, len: %d\n", *len);
-                    // Json j;
-                    // ESP_ERROR_CHECK(motor->ListTimersInJson(&j));
-                    // auto timers_json_str = j.dump();
-                    // ESP_LOGI(LOG_TAG_MAIN, "list timers: %s\n", timers_json_str.c_str());
-                    // *len = timers_json_str.size() + 1;
-                    // *read_buf = create_unique_buf(*len);
-                    // memcpy((*read_buf).get(), timers_json_str.c_str(), *len);
                 },
                 [](uint8_t* write_value, size_t len) {
                 }));
 
+    uint8_t time_service_inst_id;
+    ESP_ERROR_CHECK(gatt_server->CreateService(kGATTServiceSystemTime, &time_service_inst_id));
+    ESP_ERROR_CHECK(gatt_server->AddCharateristic(time_service_inst_id, kGATTCharUUIDSystemTime,
+                [](BufferPtr* read_buf, size_t* len) {
+                    *read_buf = create_unique_buf(*len);
+                    *(uint64_t*)(read_buf->get()) = get_curtime_s();
+                },
+                [=](uint8_t* write_buf, size_t len) {
+                    assert(len == 8);
+                    auto timestamp_s = *((uint64_t*)write_buf);
+                    set_system_time(timestamp_s);
+                    rtc->SetTime(timestamp_s);
+                }));
+
     RTCDS3231::Time time;
+    rtc->GetCurrentTime(&time);
+    set_system_time(time.timestamp_s - 3600 * 8);
     while (true) {
         rtc->GetCurrentTime(&time);
         vTaskDelay(1000 / portTICK_PERIOD_MS);
