@@ -1,7 +1,6 @@
 #include "motor.h"
 
 #include "esp_log.h"
-#include "driver/ledc.h"
 
 namespace sd {
 
@@ -66,9 +65,9 @@ esp_err_t Motor::Init() {
 
     // Prepare and then apply the LEDC PWM timer configuration
     ledc_timer_config_t ledc_timer = {
-        .speed_mode       = LEDC_LOW_SPEED_MODE,
-        .duty_resolution  = LEDC_TIMER_13_BIT,
-        .timer_num        = LEDC_TIMER_0,
+        .speed_mode       = kPWMTimerSpeedMode,
+        .duty_resolution  = kPWMTimerResolution,
+        .timer_num        = kPWMTimerNum,
         .freq_hz          = 5000,  // Set output frequency at 5 kHz
         .clk_cfg          = LEDC_AUTO_CLK
     };
@@ -78,9 +77,9 @@ esp_err_t Motor::Init() {
     ledc_channel_config_t ledc_channel = {
         .gpio_num       = 12,
         .speed_mode     = LEDC_LOW_SPEED_MODE,
-        .channel        = LEDC_CHANNEL_0,
+        .channel        = kPWMTimerChannel,
         .intr_type      = LEDC_INTR_DISABLE,
-        .timer_sel      = LEDC_TIMER_0,
+        .timer_sel      = kPWMTimerNum,
         .duty           = 0, // Set duty to 0%
         .hpoint         = 0
     };
@@ -98,15 +97,30 @@ esp_err_t Motor::Init() {
 
 esp_err_t Motor::Start(float speed) {
     ESP_LOGI(LOG_TAG_MOTOR, "[START MOTOR] motor_name: %s, speed: %f\n", motor_name_.c_str(), speed);
-    gpio_set_level(kGPIOMotorIN2, 1);
-    ESP_ERROR_CHECK(ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 4096));
-    ESP_ERROR_CHECK(ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0));
+
+    if (speed > 0) {
+        gpio_set_level(kGPIOMotorIN1, 1);
+        gpio_set_level(kGPIOMotorIN2, 0);
+    } else {
+        gpio_set_level(kGPIOMotorIN1, 0);
+        gpio_set_level(kGPIOMotorIN2, 1);
+    }
+
+    auto duty_cnt = speed * kPWMDutyTotalCnt;
+    ESP_ERROR_CHECK(ledc_set_duty(kPWMTimerSpeedMode, kPWMTimerChannel, duty_cnt));
+    ESP_ERROR_CHECK(ledc_update_duty(kPWMTimerSpeedMode, kPWMTimerChannel));
+
     return ESP_OK;
 }
 
 esp_err_t Motor::Stop() {
     ESP_LOGI(LOG_TAG_MOTOR, "[STOP MOTOR] motor_name: %s\n", motor_name_.c_str());
+    gpio_set_level(kGPIOMotorIN1, 0);
     gpio_set_level(kGPIOMotorIN2, 0);
+
+    ESP_ERROR_CHECK(ledc_set_duty(kPWMTimerSpeedMode, kPWMTimerChannel, 0));
+    ESP_ERROR_CHECK(ledc_update_duty(kPWMTimerSpeedMode, kPWMTimerChannel));
+
     return ESP_OK;
 }
 

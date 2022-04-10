@@ -5,6 +5,7 @@
 #include "common.h"
 
 #include "driver/gpio.h"
+#include "driver/ledc.h"
 #include "esp_err.h"
 #include "freertos/semphr.h"
 #include "freertos/timers.h"
@@ -75,15 +76,21 @@ class Motor {
     GATTServer* gatt_server_;
     nvs_handle_t nvs_handle_;
     uint8_t num_timers_ = 0;
+    uint32_t total_duty_ = 0;
     std::vector<std::unique_ptr<MotorTimerParam>> timer_params_;
     std::vector<std::unique_ptr<MotorTimerCtx>> timer_ctxs_;
     std::unique_ptr<Mutex> mutex_;
+
+    const static ledc_mode_t      kPWMTimerSpeedMode  = LEDC_LOW_SPEED_MODE;
+    const static ledc_timer_bit_t kPWMTimerResolution = LEDC_TIMER_13_BIT;
+    const static ledc_timer_t     kPWMTimerNum        = LEDC_TIMER_0;
+    const static ledc_channel_t   kPWMTimerChannel    = LEDC_CHANNEL_0;
+    const static uint32_t         kPWMDutyTotalCnt    = 1 << kPWMTimerResolution;
 
     const static gpio_num_t kGPIOMotorIN1  = GPIO_NUM_27;
     const static gpio_num_t kGPIOMotorIN2  = GPIO_NUM_14;
     const static gpio_num_t kGPIOMotorPWM  = GPIO_NUM_12;
     const static gpio_num_t kGPIOMotorStby = GPIO_NUM_26;
-
 
 };  // class Motor
 

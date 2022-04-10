@@ -67,7 +67,7 @@ void hello_dream(void* arg) {
                 [&motor](uint8_t* write_value, size_t len) {
                     if (len != 1) return;
                     if (write_value[0] == 1) {
-                        ESP_ERROR_CHECK(motor->Start(1));
+                        ESP_ERROR_CHECK(motor->Start(0.7));
                     } else if (write_value[0] == 0) {
                         ESP_ERROR_CHECK(motor->Stop());
                     }
