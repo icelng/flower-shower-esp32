@@ -96,7 +96,7 @@ void hello_dream(void* arg) {
 
     RTCDS3231::Time time;
     rtc->GetCurrentTime(&time);
-    set_system_time(time.timestamp_s - 3600 * 8);
+    set_system_time(time.timestamp_s);
     while (true) {
         rtc->GetCurrentTime(&time);
         vTaskDelay(1000 / portTICK_PERIOD_MS);
