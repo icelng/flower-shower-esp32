@@ -76,8 +76,8 @@ class RTCDS3231 {
 
 
     // TODO(yangliang), make the codes about i2c initialization independent, to support more various i2c peripherals
-    static const uint64_t kI2CSDAIONum = 16;
-    static const uint64_t kI2CSCLIONum = 4;
+    static const uint64_t kI2CSDAIONum = 25;
+    static const uint64_t kI2CSCLIONum = 26;
     static const uint64_t kI2CFreqHZ = 400000;
     static const uint64_t kI2CMasterPort = 0;
     static const uint64_t kI2CMasterTimeoutMs = 3000;

@@ -54,7 +54,7 @@ esp_err_t Motor::Init() {
     }
 
     gpio_config_t config = {
-        .pin_bit_mask = GPIO_SEL_12 | GPIO_SEL_14 | GPIO_SEL_26 | GPIO_SEL_27,
+        .pin_bit_mask = (1 << kGPIOMotorIN1) | (1 << kGPIOMotorIN2) | (1 << kGPIOMotorPWM) | (1 << kGPIOMotorStby),
         .mode = GPIO_MODE_OUTPUT,
         .pull_up_en = GPIO_PULLUP_ENABLE,
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
@@ -75,7 +75,7 @@ esp_err_t Motor::Init() {
 
     // Prepare and then apply the LEDC PWM channel configuration
     ledc_channel_config_t ledc_channel = {
-        .gpio_num       = 12,
+        .gpio_num       = kGPIOMotorPWM,
         .speed_mode     = LEDC_LOW_SPEED_MODE,
         .channel        = kPWMTimerChannel,
         .intr_type      = LEDC_INTR_DISABLE,

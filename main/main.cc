@@ -18,19 +18,24 @@
 
 namespace sd {
 
-const static uint16_t kGATTServiceUUID = 0x00FF;
-const static uint16_t kGATTCharUUIDCreateMotorTimer = 0xFF01;
-const static uint16_t kGATTCharUUIDClearMotorTimer = 0xFF02;
-const static uint16_t kGATTCharUUIDControlMotor = 0xFF03;
-const static uint16_t kGATTCharUUIDListMotorTimers = 0xFF04;
+// SUID: Service UUID  CID: Charateristic UUID
+const static uint16_t kSUIDCommonConfiguration = 0x000C;
+const static uint16_t kCIDDeviceName = 0x0C01;
 
-const static uint16_t kGATTServiceSystemTime = 0x00FE;
-const static uint16_t kGATTCharUUIDSystemTime = 0xFE01;
+const static uint16_t kSUIDMotorTimer = 0x00FF;
+const static uint16_t kCIDMotorTimer = 0xFF01;
+const static uint16_t kCIDSystemTim = 0xFF02;
+
+const static uint16_t kSIDMotorAdj = 0x00FF;
+
+enum MotorTimerOP {
+    ADD = 1, MOD, DEL, STOP
+};
 
 void hello_dream(void* arg) {
     printf("Hello silicon dreams!!!\n");
 
-    RTCDS3231* rtc = new RTCDS3231();
+    auto rtc = std::make_unique<RTCDS3231>();
     rtc->Init();
 
     auto motor = std::make_unique<Motor>("silicon motor");
@@ -39,55 +44,47 @@ void hello_dream(void* arg) {
     uint8_t service_inst_id;
     auto gatt_server = GATTServer::RegisterServer("SILICON DREAMS");
     ESP_ERROR_CHECK(gatt_server->Init());
-    ESP_ERROR_CHECK(gatt_server->CreateService(kGATTServiceUUID, &service_inst_id));
-    ESP_ERROR_CHECK(gatt_server->AddCharateristic(service_inst_id, kGATTCharUUIDCreateMotorTimer,
-                [](BufferPtr* read_buf, size_t* len) {
-                    *len = 1;
-                    *read_buf = create_unique_buf(*len);
-                    (read_buf->get())[0] = 'c';
-                },
-                [=, &motor](uint8_t* buf, size_t len) {
-                    std::vector<MotorTimerParam> params;
-                    Motor::DecodeTimers(buf, len, &params);
-                    for (auto& param : params) {
-                        Json j;
-                        to_json(j, param);
-                        ESP_LOGI(LOG_TAG_MAIN, "create timer: %s\n", j.dump().c_str());
-                        ESP_ERROR_CHECK(motor->CreateTimer(&param));
-                    }
-                }));
-    ESP_ERROR_CHECK(gatt_server->AddCharateristic(service_inst_id, kGATTCharUUIDClearMotorTimer,
-                [](BufferPtr*, size_t*) {},
-                [&motor](uint8_t* write_value, size_t len) {
-                    if (len != 1) return;
-                    ESP_ERROR_CHECK(motor->ClearTimer(write_value[0]));
-                }));
-    ESP_ERROR_CHECK(gatt_server->AddCharateristic(service_inst_id, kGATTCharUUIDControlMotor,
-                [](BufferPtr*, size_t*) {},
-                [&motor](uint8_t* write_value, size_t len) {
-                    if (len != 1) return;
-                    if (write_value[0] == 1) {
-                        ESP_ERROR_CHECK(motor->Start(0.7));
-                    } else if (write_value[0] == 0) {
-                        ESP_ERROR_CHECK(motor->Stop());
-                    }
-                }));
-    ESP_ERROR_CHECK(gatt_server->AddCharateristic(service_inst_id, kGATTCharUUIDListMotorTimers,
+    ESP_ERROR_CHECK(gatt_server->CreateService(kSUIDMotorTimer, &service_inst_id));
+    ESP_ERROR_CHECK(gatt_server->AddCharateristic(service_inst_id, kCIDMotorTimer,
                 [&motor](BufferPtr* read_buf, size_t* len) {
                     ESP_ERROR_CHECK(motor->ListTimersEncoded(read_buf, len));
-                    ESP_LOGI(LOG_TAG_MAIN, "list timers encoded, len: %d\n", *len);
+                    ESP_LOGI(LOG_TAG_MAIN, "[LIST TIMERS]\n");
                 },
-                [](uint8_t* write_value, size_t len) {
+                [=, &motor](uint8_t* buf, size_t len) {
+                    assert(len >= 1);
+                    std::vector<MotorTimerParam> params;
+                    auto op = (MotorTimerOP)buf[0];
+                    switch(op) {
+                        case ADD:
+                            Motor::DecodeTimers(&buf[1], len - 1, &params);
+                            for (auto& param : params) {
+                                Json j;
+                                to_json(j, param);
+                                ESP_LOGI(LOG_TAG_MAIN, "[CREATE TIMER] %s\n", j.dump().c_str());
+                                ESP_ERROR_CHECK(motor->CreateTimer(&param));
+                            }
+                            break;
+                        case MOD:
+                            ESP_LOGI(LOG_TAG_MAIN, "[MODIFY TIMER]\n");
+                            break;
+                        case DEL:
+                            ESP_LOGI(LOG_TAG_MAIN, "[DELETE TIMER]\n");
+                            ESP_ERROR_CHECK(motor->ClearTimer(buf[1]));
+                            break;
+                        case STOP:
+                            ESP_ERROR_CHECK(motor->Stop());
+                            break;
+                        default:
+                            ESP_LOGE(LOG_TAG_MAIN, "Invalid operation code: %d\n", op);
+                    }
                 }));
 
-    uint8_t time_service_inst_id;
-    ESP_ERROR_CHECK(gatt_server->CreateService(kGATTServiceSystemTime, &time_service_inst_id));
-    ESP_ERROR_CHECK(gatt_server->AddCharateristic(time_service_inst_id, kGATTCharUUIDSystemTime,
+    ESP_ERROR_CHECK(gatt_server->AddCharateristic(service_inst_id, kCIDSystemTim,
                 [](BufferPtr* read_buf, size_t* len) {
                     *read_buf = create_unique_buf(*len);
                     *(uint64_t*)(read_buf->get()) = get_curtime_s();
                 },
-                [=](uint8_t* write_buf, size_t len) {
+                [&rtc](uint8_t* write_buf, size_t len) {
                     assert(len == 8);
                     auto timestamp_s = *((uint64_t*)write_buf);
                     set_system_time(timestamp_s);

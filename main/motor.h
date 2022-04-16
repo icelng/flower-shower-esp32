@@ -87,10 +87,10 @@ class Motor {
     const static ledc_channel_t   kPWMTimerChannel    = LEDC_CHANNEL_0;
     const static uint32_t         kPWMDutyTotalCnt    = 1 << kPWMTimerResolution;
 
-    const static gpio_num_t kGPIOMotorIN1  = GPIO_NUM_27;
-    const static gpio_num_t kGPIOMotorIN2  = GPIO_NUM_14;
-    const static gpio_num_t kGPIOMotorPWM  = GPIO_NUM_12;
-    const static gpio_num_t kGPIOMotorStby = GPIO_NUM_26;
+    const static gpio_num_t kGPIOMotorIN1  = GPIO_NUM_14;
+    const static gpio_num_t kGPIOMotorIN2  = GPIO_NUM_12;
+    const static gpio_num_t kGPIOMotorPWM  = GPIO_NUM_13;
+    const static gpio_num_t kGPIOMotorStby = GPIO_NUM_27;
 
 };  // class Motor
 
