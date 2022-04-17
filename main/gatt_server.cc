@@ -96,7 +96,7 @@ void GATTServer::GAPEventHandler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_pa
     }
 }
 
-esp_err_t GATTServer::StartAdvertising() {
+esp_err_t GATTServer::InitGap() {
     esp_err_t ret;
 
     ret = esp_ble_gap_set_device_name(TEST_DEVICE_NAME);
@@ -125,12 +125,17 @@ esp_err_t GATTServer::StartAdvertising() {
                                     pdTRUE, pdTRUE, kEGTimeout);
     assert(wait_bits == (kEGAdvConfigDone | kEGAdvRspConfigDone));
 
-    ret = esp_ble_gap_start_advertising(&adv_params_);
+
+    return ESP_OK;
+}
+
+esp_err_t GATTServer::StartAdvertising() {
+    auto ret = esp_ble_gap_start_advertising(&adv_params_);
     if (ret){
         ESP_LOGE(GATTS_TAG, "start advertising failed, error code = %x", ret);
         return ret;
     }
-    wait_bits = xEventGroupWaitBits(event_group_, kEGAdvStartComplete, pdTRUE, pdTRUE, kEGTimeout);
+    auto wait_bits = xEventGroupWaitBits(event_group_, kEGAdvStartComplete, pdTRUE, pdTRUE, kEGTimeout);
     if (wait_bits != kEGAdvStartComplete) {
         ESP_LOGE(GATTS_TAG, "config adv data timeout!!");
         return ESP_ERR_TIMEOUT;
@@ -139,8 +144,11 @@ esp_err_t GATTServer::StartAdvertising() {
         ESP_LOGE(GATTS_TAG, "Advertising start failed\n");
         return ESP_FAIL;
     }
-
     return ESP_OK;
+}
+
+esp_err_t GATTServer::StopAdvertising() {
+    return esp_ble_gap_stop_advertising();
 }
 
 void GATTServer::PrepareWrite(esp_gatt_if_t gatts_if, Charateristic* charateristic, esp_ble_gatts_cb_param_t *param){
@@ -566,11 +574,9 @@ esp_err_t GATTServer::Init() {
 
     ESP_LOGI(GATTS_TAG, "[INIT GATT SERVER START] device_name: %s\n", device_name_.c_str());
 
-    ret = InitBTStack();
-    if (ret) return ret;
-
-    ret = StartAdvertising();
-    if (ret) return ret;
+    RETURN_IF_ERROR(InitBTStack());
+    RETURN_IF_ERROR(InitGap());
+    RETURN_IF_ERROR(StartAdvertising());
 
     // init gatt
     ret = esp_ble_gatts_register_callback(gatts_event_handler);

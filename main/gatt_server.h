@@ -37,6 +37,8 @@ class GATTServer {
     esp_err_t CreateService(uint16_t uuid, uint8_t* inst_id);
     esp_err_t AddCharateristic(uint8_t service_inst_id, uint16_t uuid,
                                char_read_cb read_cb, char_write_cb write_cb);
+    esp_err_t StartAdvertising();
+    esp_err_t StopAdvertising();
 
     void GATTEventHandler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if, esp_ble_gatts_cb_param_t *param);
     void GAPEventHandler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param);
@@ -78,7 +80,7 @@ class GATTServer {
     };
 
     esp_err_t InitBTStack();
-    esp_err_t StartAdvertising();
+    esp_err_t InitGap();
     void HandleCCCDWrite(uint16_t cccd_handle, uint16_t char_handle);
 
     static void PrepareWrite(esp_gatt_if_t gatts_if, Charateristic* charateristic, esp_ble_gatts_cb_param_t *param);
