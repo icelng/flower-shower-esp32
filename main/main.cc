@@ -29,7 +29,7 @@ const static uint16_t kCIDSystemTim = 0xFF02;
 const static uint16_t kSIDMotorAdj = 0x00FF;
 
 enum MotorTimerOP {
-    ADD = 1, MOD, DEL, STOP
+    ADD = 1, MOD, DEL, START, STOP
 };
 
 void hello_dream(void* arg) {
@@ -37,6 +37,9 @@ void hello_dream(void* arg) {
 
     auto rtc = std::make_unique<RTCDS3231>();
     rtc->Init();
+    RTCDS3231::Time time;
+    rtc->GetCurrentTime(&time);
+    set_system_time(time.timestamp_s);
 
     auto motor = std::make_unique<Motor>("silicon motor");
     motor->Init();
@@ -91,9 +94,6 @@ void hello_dream(void* arg) {
                     rtc->SetTime(timestamp_s);
                 }));
 
-    RTCDS3231::Time time;
-    rtc->GetCurrentTime(&time);
-    set_system_time(time.timestamp_s);
     while (true) {
         rtc->GetCurrentTime(&time);
         vTaskDelay(1000 / portTICK_PERIOD_MS);

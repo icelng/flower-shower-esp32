@@ -33,6 +33,9 @@ esp_err_t Motor::Init() {
 
     ESP_LOGI(LOG_TAG_MOTOR, "[INIT MOTOR START] motor_name: %s\n", motor_name_.c_str());
 
+    // init gpio before timer
+    RETURN_IF_ERROR(InitGPIO());
+
     RETURN_IF_ERROR(nvs_open(NVS_NS_MOTOR_TIMER, NVS_READWRITE, &nvs_handle_));
 
     auto it = nvs_entry_find(NVS_DEFAULT_PART_NAME, NVS_NS_MOTOR_TIMER, NVS_TYPE_BLOB);
@@ -52,6 +55,14 @@ esp_err_t Motor::Init() {
             ESP_ERROR_CHECK(InitTimerContext(param.get()));
         }
     }
+
+    ESP_LOGI(LOG_TAG_MOTOR, "[INIT MOTOR END] motor_name: %s\n", motor_name_.c_str());
+
+    is_initiated_ = true;
+    return ESP_OK;
+}
+
+esp_err_t Motor::InitGPIO() {
 
     gpio_config_t config = {
         .pin_bit_mask = (1 << kGPIOMotorIN1) | (1 << kGPIOMotorIN2) | (1 << kGPIOMotorPWM) | (1 << kGPIOMotorStby),
@@ -89,9 +100,6 @@ esp_err_t Motor::Init() {
     gpio_set_level(kGPIOMotorIN2, 0);
     gpio_set_level(kGPIOMotorStby, 1);
 
-    ESP_LOGI(LOG_TAG_MOTOR, "[INIT MOTOR END] motor_name: %s\n", motor_name_.c_str());
-
-    is_initiated_ = true;
     return ESP_OK;
 }
 
@@ -167,11 +175,20 @@ esp_err_t Motor::InitTimerContext(MotorTimerParam* param) {
     // calculate the ticks to start motor
     int64_t offset_from_frist_start = curtime_ms - param->first_start_timestamp;
     TickType_t ticks_to_start;
+    bool is_running = false;
+    uint64_t ms_to_stop = 0;
     if (offset_from_frist_start <= 0) {
         ticks_to_start = (0 - offset_from_frist_start) / portTICK_PERIOD_MS;
     } else {
-        uint64_t offset_in_period = offset_from_frist_start % param->period_ms;
-        ticks_to_start = (param->period_ms - offset_in_period) / portTICK_PERIOD_MS;
+        uint64_t gone_ms_in_period = offset_from_frist_start;
+        if (param->period_ms > 0) {
+            gone_ms_in_period = offset_from_frist_start % param->period_ms;
+        }
+        ticks_to_start = (param->period_ms - gone_ms_in_period) / portTICK_PERIOD_MS;
+        if (gone_ms_in_period < param->duration_ms) {
+            is_running = true;
+            ms_to_stop = param->duration_ms - gone_ms_in_period;
+        }
     }
     // because of the timer service implemention, ticks_to_start must be greater than 0
     ticks_to_start = ticks_to_start == 0 ? 1 : ticks_to_start;
@@ -182,13 +199,23 @@ esp_err_t Motor::InitTimerContext(MotorTimerParam* param) {
     auto new_ctx = new MotorTimerCtx();
     timer_ctxs_[param->timer_no].reset(new_ctx);
     new_ctx->motor = this;
-    new_ctx->timer_no = param->timer_no;
-    new_ctx->motor_cmd = START_MOTOR;
-    new_ctx->timer_handle = xTimerCreate(timer_name, ticks_to_start, pdFALSE, new_ctx, TimerTaskEntry);
+    memcpy(&new_ctx->param, param, sizeof(struct MotorTimerParam));
+    new_ctx->timer_handle = xTimerCreate(timer_name,
+                                         ticks_to_start,
+                                         param->period_ms > 0,
+                                         new_ctx,
+                                         [](TimerHandle_t timer_handle) {
+                                            auto* ctx = (MotorTimerCtx*) pvTimerGetTimerID(timer_handle);
+                                            ctx->motor->TimerTask(ctx);
+                                         });
     if (new_ctx->timer_handle == nullptr) {
         return ESP_ERR_NO_MEM;
     }
     assert(xTimerStart(new_ctx->timer_handle, 0));
+
+    if (is_running) {
+        RETURN_IF_ERROR(Start(param->speed, ms_to_stop));
+    }
 
     ESP_LOGI(LOG_TAG_MOTOR,
              "[INIT TIMER CTX SUCCESSFULLY] motor_name: %s timer_no: %d\n",
@@ -197,54 +224,36 @@ esp_err_t Motor::InitTimerContext(MotorTimerParam* param) {
     return ESP_OK;
 }
 
-void Motor::TimerTaskEntry(TimerHandle_t timer_handle) {
-    auto* ctx = (MotorTimerCtx*) pvTimerGetTimerID(timer_handle);
-    assert(ctx->timer_handle == timer_handle);
-    ctx->motor->TimerTask(ctx);
-}
-
 void Motor::TimerTask(MotorTimerCtx* ctx) {
-    auto timer_param = timer_params_[ctx->timer_no].get();
-    TickType_t ticks_to_next_cmd = 0;
-    MotorTimerCMD next_cmd;
-
-    switch(ctx->motor_cmd) {
-        case START_MOTOR:
-            ESP_LOGI(LOG_TAG_MOTOR, "[TIME START MOTOR] motor_name: %s timer_no: %d cur_time: %lld\n",
-                     motor_name_.c_str(), ctx->timer_no, get_curtime_ms());
-
-            Start(timer_param->speed);
-            if ((timer_param->period_ms - timer_param->duration_ms) / portTICK_PERIOD_MS == 0) {
-                // running forever
-                next_cmd = START_MOTOR;
-                ticks_to_next_cmd = timer_param->period_ms / portTICK_PERIOD_MS;
-            } else {
-                next_cmd = STOP_MOTOR;
-                ticks_to_next_cmd = timer_param->duration_ms / portTICK_PERIOD_MS;
-            }
-
-            break;
-        case STOP_MOTOR:
-            ESP_LOGI(LOG_TAG_MOTOR, "[TIME STOP MOTOR] motor_name: %s timer_no: %d cur_time: %lld\n",
-                     motor_name_.c_str(), ctx->timer_no, get_curtime_ms());
-
-            Stop();
-            if ((timer_param->period_ms / portTICK_PERIOD_MS) == 0) {
-                // the timer is not period, just running once.
-                ticks_to_next_cmd = 0;
-                break;
-            }
-            next_cmd = START_MOTOR;
-            ticks_to_next_cmd = (timer_param->period_ms - timer_param->duration_ms) / portTICK_PERIOD_MS;
-
-            break;
-    }
-
-    if (ticks_to_next_cmd != 0) {
-        ctx->motor_cmd = next_cmd;
-        xTimerChangePeriod(ctx->timer_handle, ticks_to_next_cmd, 0);
+    ctx->motor->Start(ctx->param.speed, ctx->param.duration_ms);
+    if (ctx->param.period_ms > 0) {
+        // first task period may be not equal to ctx->param.period_ms
+        xTimerChangePeriod(ctx->timer_handle,
+                           ctx->param.period_ms / portTICK_PERIOD_MS, 0);
         xTimerReset(ctx->timer_handle, 0);
     }
+}
+
+esp_err_t Motor::Start(float speed, uint64_t duration_ms) {
+    RETURN_IF_ERROR(Start(speed));
+
+    if (duration_ms == 0) { return ESP_OK; }
+
+    TickType_t ticks_to_stop = duration_ms / portTICK_PERIOD_MS;
+    ticks_to_stop = ticks_to_stop == 0 ? 1 : ticks_to_stop;
+    auto timer_handle = xTimerCreate("motor-timer-stop",
+                                     ticks_to_stop,
+                                     pdFALSE, this,
+                                     [](TimerHandle_t timer_handle) {
+                                        auto* motor = (Motor*) pvTimerGetTimerID(timer_handle);
+                                        motor->Stop();
+                                     });
+    if (timer_handle == nullptr) {
+        return ESP_ERR_NO_MEM;
+    }
+    assert(xTimerStart(timer_handle, 0));
+
+    return ESP_OK;
 }
 
 esp_err_t Motor::ListTimers(std::vector<MotorTimerParam>* timers) {

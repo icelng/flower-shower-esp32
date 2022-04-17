@@ -39,6 +39,7 @@ class Motor {
 
     esp_err_t Init();
     esp_err_t Start(float speed);
+    esp_err_t Start(float speed, uint64_t duration_ms);
     esp_err_t Stop();
 
     // timer manager
@@ -58,16 +59,15 @@ class Motor {
     };
 
     struct MotorTimerCtx {
-        Motor*        motor;
-        uint8_t       timer_no;
-        TimerHandle_t timer_handle;
-        MotorTimerCMD motor_cmd;
+        Motor*          motor;
+        MotorTimerParam param;
+        TimerHandle_t   timer_handle;
     };
 
     static const uint8_t    kMaxNumTimers   = 16;
     static const TickType_t kTicksPerSecond = 1000 / portTICK_PERIOD_MS;
 
-    static void TimerTaskEntry(TimerHandle_t timer_handle);
+    esp_err_t InitGPIO();
     void TimerTask(MotorTimerCtx* ctx);
     esp_err_t InitTimerContext(MotorTimerParam* param);
 
