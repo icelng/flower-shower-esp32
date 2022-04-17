@@ -7,6 +7,7 @@
 #include "esp_log.h"
 #include "esp_system.h"
 #include "esp_spi_flash.h"
+#include "esp_pm.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "nvs_flash.h"
@@ -35,6 +36,9 @@ enum MotorTimerOP {
 void hello_dream(void* arg) {
     printf("Hello silicon dreams!!!\n");
 
+    esp_pm_config_esp32_t pm_config = {.max_freq_mhz = 240, .min_freq_mhz = 40, .light_sleep_enable = true};
+    ESP_ERROR_CHECK(esp_pm_configure(&pm_config));
+ 
     auto rtc = std::make_unique<RTCDS3231>();
     rtc->Init();
     RTCDS3231::Time time;
@@ -96,7 +100,7 @@ void hello_dream(void* arg) {
 
     while (true) {
         rtc->GetCurrentTime(&time);
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
+        vTaskDelay(10000 / portTICK_PERIOD_MS);
     }
 }
 

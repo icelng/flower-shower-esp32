@@ -449,8 +449,8 @@ GATTServer::GATTServer(const std::string& device_name) :
     scan_rsp_data_.p_service_uuid = (uint8_t*)kServiceUUID128;
     scan_rsp_data_.flag = (ESP_BLE_ADV_FLAG_GEN_DISC | ESP_BLE_ADV_FLAG_BREDR_NOT_SPT);
 
-    adv_params_.adv_int_min        = 0x20;
-    adv_params_.adv_int_max        = 0x40;
+    adv_params_.adv_int_min        = 0x800;  // 1.28s
+    adv_params_.adv_int_max        = 0x800;  // 1.28s
     adv_params_.adv_type           = ADV_TYPE_IND;
     adv_params_.own_addr_type      = BLE_ADDR_TYPE_PUBLIC;
     // adv_params_.peer_addr          =
