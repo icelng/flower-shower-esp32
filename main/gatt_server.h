@@ -19,7 +19,7 @@ namespace sd {
 const static size_t kGATTMTU = 22;
 
 using char_read_cb = std::function<void(BufferPtr*, size_t*)>;
-using char_write_cb = std::function<void(uint8_t*, size_t)>;
+using char_write_cb = std::function<void(uint16_t, uint8_t*, size_t)>;
 
 static constexpr uint8_t kServiceUUID128[16] = {
     /* LSB <--------------------------------------------------------------------------------> MSB */
@@ -39,6 +39,7 @@ class GATTServer {
                                char_read_cb read_cb, char_write_cb write_cb);
     esp_err_t StartAdvertising();
     esp_err_t StopAdvertising();
+    esp_err_t Notify(uint16_t char_handle, uint8_t* buf, size_t buf_len);
 
     void GATTEventHandler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if, esp_ble_gatts_cb_param_t *param);
     void GAPEventHandler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param);
@@ -107,6 +108,8 @@ class GATTServer {
     std::unordered_map<uint16_t, uint16_t> cccds_;
     uint16_t new_char_handle_;
     uint16_t new_cccd_handle_;
+
+    bool is_login_ = false;
 
     // event group
     static const TickType_t kEGTimeout = 3000 / portTICK_PERIOD_MS;

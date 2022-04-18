@@ -19,11 +19,11 @@
 
 namespace sd {
 
-// SUID: Service UUID  CID: Charateristic UUID
-const static uint16_t kSUIDCommonConfiguration = 0x000C;
+// SID: Service UUID  CID: Charateristic UUID
+const static uint16_t kSIDCommonConfiguration = 0x000C;
 const static uint16_t kCIDDeviceName = 0x0C01;
 
-const static uint16_t kSUIDMotorTimer = 0x00FF;
+const static uint16_t kSIDMotorTimer = 0x00FF;
 const static uint16_t kCIDMotorTimer = 0xFF01;
 const static uint16_t kCIDSystemTim = 0xFF02;
 
@@ -38,7 +38,7 @@ void hello_dream(void* arg) {
 
     esp_pm_config_esp32_t pm_config = {.max_freq_mhz = 240, .min_freq_mhz = 40, .light_sleep_enable = true};
     ESP_ERROR_CHECK(esp_pm_configure(&pm_config));
- 
+
     auto rtc = std::make_unique<RTCDS3231>();
     rtc->Init();
     RTCDS3231::Time time;
@@ -51,13 +51,13 @@ void hello_dream(void* arg) {
     uint8_t service_inst_id;
     auto gatt_server = GATTServer::RegisterServer("SILICON DREAMS");
     ESP_ERROR_CHECK(gatt_server->Init());
-    ESP_ERROR_CHECK(gatt_server->CreateService(kSUIDMotorTimer, &service_inst_id));
+    ESP_ERROR_CHECK(gatt_server->CreateService(kSIDMotorTimer, &service_inst_id));
     ESP_ERROR_CHECK(gatt_server->AddCharateristic(service_inst_id, kCIDMotorTimer,
                 [&motor](BufferPtr* read_buf, size_t* len) {
                     ESP_ERROR_CHECK(motor->ListTimersEncoded(read_buf, len));
                     ESP_LOGI(LOG_TAG_MAIN, "[LIST TIMERS]\n");
                 },
-                [=, &motor](uint8_t* buf, size_t len) {
+                [=, &motor](uint16_t char_handle, uint8_t* buf, size_t len) {
                     assert(len >= 1);
                     std::vector<MotorTimerParam> params;
                     auto op = (MotorTimerOP)buf[0];
@@ -91,7 +91,7 @@ void hello_dream(void* arg) {
                     *read_buf = create_unique_buf(*len);
                     *(uint64_t*)(read_buf->get()) = get_curtime_s();
                 },
-                [&rtc](uint8_t* write_buf, size_t len) {
+                [&rtc](uint16_t char_handle, uint8_t* write_buf, size_t len) {
                     assert(len == 8);
                     auto timestamp_s = *((uint64_t*)write_buf);
                     set_system_time(timestamp_s);

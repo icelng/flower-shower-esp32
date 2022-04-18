@@ -38,9 +38,11 @@
 
 namespace sd {
 
+const static uint16_t kSIDLogin = 0x000A;
+const static uint16_t kCIDLogin = 0x0A01;
+
 
 static uint8_t char1_str[] = {0x11,0x22,0x33};
-static esp_gatt_char_prop_t a_property = 0;
 
 GATTServer* g_gatt_server;
 
@@ -50,12 +52,6 @@ static esp_attr_value_t gatts_demo_char1_val =
     .attr_len     = sizeof(char1_str),
     .attr_value   = char1_str,
 };
-
-static uint8_t adv_config_done = 0;
-#define adv_config_flag      (1 << 0)
-#define scan_rsp_config_flag (1 << 1)
-
-
 
 static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param) {
     assert(g_gatt_server != nullptr);
@@ -151,6 +147,14 @@ esp_err_t GATTServer::StopAdvertising() {
     return esp_ble_gap_stop_advertising();
 }
 
+esp_err_t GATTServer::Notify(uint16_t char_handle, uint8_t* buf, size_t buf_len) {
+    auto it = chars_.find(char_handle);
+    if (it == chars_.end()) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    return esp_ble_gatts_send_indicate(gatts_if_, conn_id_, char_handle, buf_len, buf, false);
+}
+
 void GATTServer::PrepareWrite(esp_gatt_if_t gatts_if, Charateristic* charateristic, esp_ble_gatts_cb_param_t *param){
     auto prepare_write_env = &charateristic->prepare_write_env;
     esp_gatt_status_t status = ESP_GATT_OK;
@@ -193,7 +197,9 @@ void GATTServer::PrepareWrite(esp_gatt_if_t gatts_if, Charateristic* charaterist
 void GATTServer::ExecWrite(Charateristic* charateristic, esp_ble_gatts_cb_param_t *param) {
     auto prepare_write_env = &charateristic->prepare_write_env;
     if (param->exec_write.exec_write_flag == ESP_GATT_PREP_WRITE_EXEC) {
-        charateristic->write_cb(prepare_write_env->prepare_buf, prepare_write_env->prepare_len);
+        charateristic->write_cb(charateristic->char_handle,
+                                prepare_write_env->prepare_buf,
+                                prepare_write_env->prepare_len);
     } else {
         ESP_LOGI(GATTS_TAG,"ESP_GATT_PREP_WRITE_CANCEL");
     }
@@ -227,6 +233,17 @@ void GATTServer::GATTEventHandler(esp_gatts_cb_event_t event, esp_gatt_if_t gatt
         auto it = chars_.find(param->write.handle);
         assert(it != chars_.end());
         auto charateristic = it->second.get();
+
+        // reject no login
+        if (charateristic->char_uuid.uuid.uuid16 != kCIDLogin && !is_login_) {
+            esp_gatt_status_t status = ESP_GATT_AUTH_FAIL;
+            esp_ble_gatts_send_response(gatts_if,
+                                        param->write.conn_id,
+                                        param->write.trans_id,
+                                        status,
+                                        NULL);
+            break;
+        }
 
         esp_gatt_rsp_t rsp;
         memset(&rsp, 0, sizeof(esp_gatt_rsp_t));
@@ -269,27 +286,62 @@ void GATTServer::GATTEventHandler(esp_gatts_cb_event_t event, esp_gatt_if_t gatt
         break;
     }
     case ESP_GATTS_WRITE_EVT: {
-        ESP_LOGI(GATTS_TAG, "GATT_WRITE_EVT, conn_id %d, trans_id %d, handle %d, value_len: %d, is_prep: %d",
-                param->write.conn_id, param->write.trans_id, param->write.handle, param->write.len, param->write.is_prep);
+        ESP_LOGI(GATTS_TAG,
+                "GATT_WRITE_EVT, conn_id %d, trans_id %d, handle %d, value_len: %d, is_prep: %d, is_login_: %d",
+                param->write.conn_id, param->write.trans_id,
+                param->write.handle, param->write.len, param->write.is_prep, is_login_);
+
         auto cccd_it = cccds_.find(param->write.handle);
         if (cccd_it != cccds_.end()) {
-            auto cccd_handle = cccd_it->first;
             auto char_handle = cccd_it->second;
-            auto char_it = chars_.find(param->write.handle);
+            auto char_it = chars_.find(char_handle);
             assert(char_it != chars_.end());
             auto charateristic = char_it->second.get();
 
-            uint16_t cccd_value= param->write.value[1] << 8 | param->write.value[0];
+            // TODO(liang), callback
+            uint16_t cccd_value = param->write.value[1] << 8 | param->write.value[0];
+            switch(cccd_value) {
+                case 0x0000:
+                    ESP_LOGI(GATTS_TAG, "[DISABLE NOTIFICATION/INDICATION] char uuid: %x\n",
+                             charateristic->char_uuid.uuid.uuid16);
+                    break;
+                case 0x0001:
+                    ESP_LOGI(GATTS_TAG, "[ENABLE NOTIFICATION] char uuid: %x\n", charateristic->char_uuid.uuid.uuid16);
+                    break;
+                case 0x0002:
+                    ESP_LOGI(GATTS_TAG, "[ENABLE INDICATION] char uuid: %x\n", charateristic->char_uuid.uuid.uuid16);
+                    break;
+                default:
+                    ESP_LOGE(GATTS_TAG, "invalid cccd_value: %d\n", cccd_value);
+                    break;
+            }
 
+            esp_gatt_status_t status = ESP_GATT_OK;
+            esp_ble_gatts_send_response(gatts_if, param->write.conn_id, param->write.trans_id, status, NULL);
+            break;
         }
+
         auto it = chars_.find(param->write.handle);
         assert(it != chars_.end());
         auto charateristic = it->second.get();
-        // TODO(liang), implement notification
+
+        // reject no login
+        if (charateristic->char_uuid.uuid.uuid16 != kCIDLogin && !is_login_) {
+            if (param->write.need_rsp) {
+                esp_gatt_status_t status = ESP_GATT_AUTH_FAIL;
+                esp_ble_gatts_send_response(gatts_if,
+                                            param->write.conn_id,
+                                            param->write.trans_id,
+                                            status,
+                                            NULL);
+            }
+            break;
+        }
+
         if (param->write.is_prep) {
             PrepareWrite(gatts_if, charateristic, param);
         } else if (param->write.need_rsp) {
-            charateristic->write_cb(param->write.value, param->write.len);
+            charateristic->write_cb(charateristic->char_handle, param->write.value, param->write.len);
             if (param->write.need_rsp) {
                 esp_gatt_status_t status = ESP_GATT_OK;
                 esp_ble_gatts_send_response(gatts_if,
@@ -387,6 +439,7 @@ void GATTServer::GATTEventHandler(esp_gatts_cb_event_t event, esp_gatt_if_t gatt
     }
     case ESP_GATTS_DISCONNECT_EVT:
         ESP_LOGI(GATTS_TAG, "ESP_GATTS_DISCONNECT_EVT, disconnect reason 0x%x", param->disconnect.reason);
+        is_login_ = false;
         esp_ble_gap_start_advertising(&adv_params_);
         break;
     case ESP_GATTS_CONF_EVT:
@@ -608,6 +661,24 @@ esp_err_t GATTServer::Init() {
     }
 
     ESP_LOGI(GATTS_TAG, "[INIT GATT SERVER SUCCESSFULLY] device_name: %s\n", device_name_.c_str());
+
+    uint8_t magic_service_inst_id;
+    ESP_ERROR_CHECK(CreateService(kSIDLogin, &magic_service_inst_id));
+    ESP_ERROR_CHECK(AddCharateristic(magic_service_inst_id, kCIDLogin,
+                [&](BufferPtr* read_buf, size_t* len) {
+                    *len = 1;
+                    *read_buf =  create_unique_buf(*len);
+                    memset((*read_buf).get(), is_login_, 1);
+                },
+                [&](uint16_t char_handle, uint8_t* write_buf, size_t len) {
+                    if (strcmp((char*)write_buf, "ccyyds") == 0) {
+                        ESP_LOGI(LOG_TAG_MAIN, "[LOGIN SUCCEED]\n");
+                        is_login_ = true;
+                    } else {
+                        ESP_LOGI(LOG_TAG_MAIN, "[LOGIN FAIL]\n");
+                    }
+                    ESP_ERROR_CHECK(Notify(char_handle, (uint8_t*)&is_login_, 1));
+                }));
 
     return ESP_OK;
 }
