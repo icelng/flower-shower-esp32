@@ -2,6 +2,9 @@
 
 #include "esp_err.h"
 
+struct tmrTimerControl;
+typedef struct tmrTimerControl* TimerHandle_t;
+
 namespace sd {
 
 class RTCDS3231 {
@@ -16,16 +19,19 @@ class RTCDS3231 {
         time_t timestamp_s;
     };
 
-    RTCDS3231();
+    RTCDS3231(bool adjust_system_time = true);
     ~RTCDS3231();
 
     esp_err_t Init();
     esp_err_t GetCurrentTime(Time* time);
     esp_err_t SetTime(time_t timestamp_s);
     esp_err_t SetTime(Time* time);
+    esp_err_t AdjustSystemTime();
 
   private:
     bool is_initiated_ = false;
+    bool adjust_system_time_ = true;
+    TimerHandle_t adjust_timer_handle_ = nullptr;
 
     esp_err_t ReadRegister(uint8_t reg_addr, uint8_t* data, size_t len);
     esp_err_t ReadRegisterByte(uint8_t reg_addr, uint8_t* data);

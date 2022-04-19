@@ -4,15 +4,22 @@
 #include "esp_log.h"
 #include "esp_system.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/timers.h"
 
 #include "common.h"
 
 namespace sd {
 
-RTCDS3231::RTCDS3231() {}
+RTCDS3231::RTCDS3231(bool adjust_system_time): adjust_system_time_(adjust_system_time) {}
 
 RTCDS3231::~RTCDS3231() {
     if (is_initiated_) {
+        if (adjust_timer_handle_ != nullptr) {
+            xTimerStop(adjust_timer_handle_,0);
+            while (xTimerIsTimerActive(adjust_timer_handle_)) vTaskDelay(1);
+            xTimerDelete(adjust_timer_handle_, 0);
+        }
+
         ESP_ERROR_CHECK(i2c_driver_delete(kI2CMasterPort));
     }
 }
@@ -33,10 +40,34 @@ esp_err_t RTCDS3231::Init() {
     RETURN_IF_ERROR(i2c_param_config(kI2CMasterPort, &conf));
     RETURN_IF_ERROR(i2c_driver_install(kI2CMasterPort, conf.mode, 0, 0, 0));
 
-    is_initiated_ = true;
+
+    if (adjust_system_time_) {
+        ESP_ERROR_CHECK(AdjustSystemTime());
+        adjust_timer_handle_ = xTimerCreate("refresh-system-time",
+                                             60000 / portTICK_PERIOD_MS,
+                                             pdTRUE, this,
+                                             [](TimerHandle_t timer_handle) {
+                                                auto* rtc = (RTCDS3231*)pvTimerGetTimerID(timer_handle);
+                                                ESP_ERROR_CHECK(rtc->AdjustSystemTime());
+                                             });
+        if (adjust_timer_handle_ == nullptr) {
+            xTimerDelete(adjust_timer_handle_, 0);
+            return ESP_ERR_NO_MEM;
+        }
+        assert(xTimerStart(adjust_timer_handle_, 0));
+    }
 
     ESP_LOGI(LOG_TAG_RTC_DS3231, "[INIT RTC DS3231 END]\n");
 
+    is_initiated_ = true;
+
+    return ESP_OK;
+}
+
+esp_err_t RTCDS3231::AdjustSystemTime() {
+    RTCDS3231::Time time;
+    RETURN_IF_ERROR(GetCurrentTime(&time));
+    set_system_time(time.timestamp_s);
     return ESP_OK;
 }
 

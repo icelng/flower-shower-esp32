@@ -40,10 +40,7 @@ void hello_dream(void* arg) {
     ESP_ERROR_CHECK(esp_pm_configure(&pm_config));
 
     auto rtc = std::make_unique<RTCDS3231>();
-    rtc->Init();
-    RTCDS3231::Time time;
-    rtc->GetCurrentTime(&time);
-    set_system_time(time.timestamp_s);
+    ESP_ERROR_CHECK(rtc->Init());
 
     auto motor = std::make_unique<Motor>("silicon motor");
     motor->Init();
@@ -99,7 +96,6 @@ void hello_dream(void* arg) {
                 }));
 
     while (true) {
-        rtc->GetCurrentTime(&time);
         vTaskDelay(10000 / portTICK_PERIOD_MS);
     }
 }
