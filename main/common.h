@@ -8,8 +8,10 @@
 #define LOG_TAG_MOTOR "motor"
 #define LOG_TAG_MAIN "main"
 #define LOG_TAG_RTC_DS3231 "rtc_ds3231"
+#define LOG_TAG_CONFIG "configuration"
 
 #define NVS_NS_MOTOR_TIMER "motor-timer"
+#define NVS_NS_CONFIG_MANAGER "config-mgt"
 
 #define RETURN_IF_ERROR(esp_err)\
     if (esp_err) return esp_err

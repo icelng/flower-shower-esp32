@@ -27,7 +27,6 @@
 #define GATTS_SERVICE_UUID          0x00FF
 #define GATTS_NUM_HANDLE            32
 
-#define TEST_DEVICE_NAME            "SILICON_DREAMS"
 #define TEST_MANUFACTURER_DATA_LEN  17
 
 #define GATTS_DEMO_CHAR_VAL_LEN_MAX 0x40
@@ -95,7 +94,7 @@ void GATTServer::GAPEventHandler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_pa
 esp_err_t GATTServer::InitGap() {
     esp_err_t ret;
 
-    ret = esp_ble_gap_set_device_name(TEST_DEVICE_NAME);
+    ret = esp_ble_gap_set_device_name(device_name_.c_str());
     if (ret) {
         ESP_LOGE(GATTS_TAG, "set device name error, error code = %x", ret);
         return ret;
@@ -522,7 +521,8 @@ GATTServer::~GATTServer() {
 esp_err_t GATTServer::AddCharateristic(uint8_t service_inst_id,
                                        uint16_t uuid,
                                        char_read_cb read_cb,
-                                       char_write_cb write_cb) {
+                                       char_write_cb write_cb,
+                                       uint16_t* char_handle) {
     if (service_inst_id >= services_.size()) {
         ESP_LOGE(GATTS_TAG, "failed to add charateristic, invalid service instance id: %d\n", service_inst_id);
         return ESP_ERR_INVALID_ARG;
@@ -566,8 +566,11 @@ esp_err_t GATTServer::AddCharateristic(uint8_t service_inst_id,
     auto it = chars_.find(new_char_handle_);
     assert(it == chars_.end());
     chars_.emplace(new_char_handle_, new_char);
-
     cccds_[new_cccd_handle_] = new_char_handle_;
+
+    if (char_handle != nullptr) {
+        *char_handle = new_char_handle_;
+    }
 
     return ESP_OK;
 }

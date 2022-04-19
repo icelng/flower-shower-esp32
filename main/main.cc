@@ -1,5 +1,6 @@
 #include "gatt_server.h"
 
+#include "config_manager.h"
 #include "motor.h"
 #include "rtc_ds3231.h"
 
@@ -20,9 +21,6 @@
 namespace sd {
 
 // SID: Service UUID  CID: Charateristic UUID
-const static uint16_t kSIDCommonConfiguration = 0x000C;
-const static uint16_t kCIDDeviceName = 0x0C01;
-
 const static uint16_t kSIDMotorTimer = 0x00FF;
 const static uint16_t kCIDMotorTimer = 0xFF01;
 const static uint16_t kCIDSystemTim = 0xFF02;
@@ -39,14 +37,20 @@ void hello_dream(void* arg) {
     esp_pm_config_esp32_t pm_config = {.max_freq_mhz = 240, .min_freq_mhz = 40, .light_sleep_enable = true};
     ESP_ERROR_CHECK(esp_pm_configure(&pm_config));
 
+    auto config_mgt = std::make_unique<ConfigManager>();
+    config_mgt->Init();
+
     auto rtc = std::make_unique<RTCDS3231>();
     ESP_ERROR_CHECK(rtc->Init());
 
     auto motor = std::make_unique<Motor>("silicon motor");
     motor->Init();
 
+    std::string device_name;
+    ESP_ERROR_CHECK(config_mgt->GetOrSetDefault("device-name", &device_name, "CC's Flowers"));
+
     uint8_t service_inst_id;
-    auto gatt_server = GATTServer::RegisterServer("SILICON DREAMS");
+    auto gatt_server = GATTServer::RegisterServer(device_name.c_str());
     ESP_ERROR_CHECK(gatt_server->Init());
     ESP_ERROR_CHECK(gatt_server->CreateService(kSIDMotorTimer, &service_inst_id));
     ESP_ERROR_CHECK(gatt_server->AddCharateristic(service_inst_id, kCIDMotorTimer,

@@ -36,7 +36,7 @@ class GATTServer {
     esp_err_t Init();
     esp_err_t CreateService(uint16_t uuid, uint8_t* inst_id);
     esp_err_t AddCharateristic(uint8_t service_inst_id, uint16_t uuid,
-                               char_read_cb read_cb, char_write_cb write_cb);
+                               char_read_cb read_cb, char_write_cb write_cb, uint16_t* char_handle = nullptr);
     esp_err_t StartAdvertising();
     esp_err_t StopAdvertising();
     esp_err_t Notify(uint16_t char_handle, uint8_t* buf, size_t buf_len);
