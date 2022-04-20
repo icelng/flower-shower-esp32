@@ -37,21 +37,20 @@ void hello_dream(void* arg) {
     esp_pm_config_esp32_t pm_config = {.max_freq_mhz = 240, .min_freq_mhz = 40, .light_sleep_enable = true};
     ESP_ERROR_CHECK(esp_pm_configure(&pm_config));
 
-    auto config_mgt = std::make_unique<ConfigManager>();
-    config_mgt->Init();
+    auto cfg_mgt = std::make_unique<ConfigManager>();
+    cfg_mgt->Init();
 
     auto rtc = std::make_unique<RTCDS3231>();
     ESP_ERROR_CHECK(rtc->Init());
 
-    auto motor = std::make_unique<Motor>("silicon motor");
+    auto motor = std::make_unique<Motor>("motor");
     motor->Init();
 
-    std::string device_name;
-    ESP_ERROR_CHECK(config_mgt->GetOrSetDefault("device-name", &device_name, "CC's Flowers"));
-
+    auto gatt_server = GATTServer::RegisterServer(cfg_mgt.get());
     uint8_t service_inst_id;
-    auto gatt_server = GATTServer::RegisterServer(device_name.c_str());
     ESP_ERROR_CHECK(gatt_server->Init());
+    ESP_ERROR_CHECK(cfg_mgt->SetGATTServer(gatt_server));
+
     ESP_ERROR_CHECK(gatt_server->CreateService(kSIDMotorTimer, &service_inst_id));
     ESP_ERROR_CHECK(gatt_server->AddCharateristic(service_inst_id, kCIDMotorTimer,
                 [&motor](BufferPtr* read_buf, size_t* len) {

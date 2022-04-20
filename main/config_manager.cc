@@ -10,17 +10,10 @@ enum ConfigCharOP {
     SET = 0, GET
 };
 
-ConfigManager::ConfigManager() {
-    event_group_ = xEventGroupCreate();
-    assert(event_group_ != nullptr);
-}
+ConfigManager::ConfigManager() {}
 
 ConfigManager::~ConfigManager() {
     is_shutdown_ = true;
-    xEventGroupSetBits(event_group_, kEGNotifyConfig);
-    while (xEventGroupWaitBits(event_group_, kEGNotificationTaskJoin,
-                               pdTRUE, pdTRUE, kEGTimeout) != kEGNotificationTaskJoin);
-    vEventGroupDelete(event_group_);
 }
 
 esp_err_t ConfigManager::Init() {
@@ -46,10 +39,18 @@ esp_err_t ConfigManager::SetGATTServer(GATTServer* gatt_server) {
     gatt_server_ = gatt_server;
 
     uint8_t service_inst_id;
-    ESP_ERROR_CHECK(gatt_server->CreateService(kSIDConfiguration, &service_inst_id));
-    ESP_ERROR_CHECK(gatt_server_->AddCharateristic(service_inst_id, kCIDConfiguration,
+    ESP_ERROR_CHECK(gatt_server->CreateService(kSIDConfigManager, &service_inst_id));
+    ESP_ERROR_CHECK(gatt_server_->AddCharateristic(service_inst_id, kCIDConfigManager,
                     [&](BufferPtr* read_buf, size_t* len) {
-                        xEventGroupSetBits(event_group_, kEGNotifyConfig);
+                        auto [name, value] = config_on_standby_;
+                        ESP_LOGI(LOG_TAG_CONFIG, "[GET CONFIG] name: %s, value: %s\n", name.c_str(), value.c_str());
+                        *len = 4 + name.size() + value.size();
+                        *read_buf = create_unique_buf(*len);
+                        auto buf = read_buf->get();
+                        *(uint16_t*)&buf[0] = name.size();
+                        *(uint16_t*)&buf[2 + name.size()] = value.size();
+                        memcpy(&buf[2], name.c_str(), name.size());
+                        memcpy(&buf[4 + name.size()], value.c_str(), value.size());
                     },
                     [&](uint16_t char_handle, uint8_t* write_buf, size_t len) {
                         auto op = (ConfigCharOP)write_buf[0];
@@ -71,7 +72,9 @@ esp_err_t ConfigManager::SetGATTServer(GATTServer* gatt_server) {
                                 std::string name((char*)&write_buf[3], name_len);
                                 std::string value;
                                 if (Get(name, &value) == ESP_OK) {
-                                    NotifyConfig(name, value);
+                                    config_on_standby_ = {name, value};
+                                } else {
+                                    config_on_standby_ = {"notfound", ""};
                                 }
                                 break;
                             }
@@ -80,30 +83,7 @@ esp_err_t ConfigManager::SetGATTServer(GATTServer* gatt_server) {
                         }
                     }, &char_handle_));
 
-    xTaskCreate([](void* arg) { ((ConfigManager*)arg)->NotificationTask(); },
-                "notify-config", 4096, this, 5, &notification_task_handle_);
-
     return ESP_OK;
-}
-
-void ConfigManager::NotificationTask() {
-    while (!is_shutdown_) {
-        auto wait_bits = xEventGroupWaitBits(event_group_, kEGNotifyConfig, pdTRUE, pdTRUE, kEGTimeout);
-        if (is_shutdown_) break;
-        if (wait_bits != kEGNotifyConfig) continue;
-        if (gatt_server_ == nullptr) continue;
-
-        {
-            MutexGuard g(&config_mutex_);
-            for (auto it : configs_) {
-                NotifyConfig(it.first, it.second);
-            }
-        }
-    }
-
-    // There is no native thread join mechanism in FreeRTOS
-    xEventGroupSetBits(event_group_, kEGNotificationTaskJoin);
-    vTaskDelete(nullptr);
 }
 
 void ConfigManager::NotifyConfig(const std::string& name, const std::string& value) {

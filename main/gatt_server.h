@@ -1,11 +1,12 @@
 #pragma once
 
+#include "common.h"
+#include "config_manager.h"
+
 #include "esp_gap_ble_api.h"
 #include "esp_gatts_api.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
-
-#include "common.h"
 
 #include <atomic>
 #include <functional>
@@ -28,10 +29,10 @@ static constexpr uint8_t kServiceUUID128[16] = {
 
 class GATTServer {
   public:
-    GATTServer(const std::string& device_name);
+    GATTServer(ConfigManager* cfg_mgt);
     ~GATTServer();
 
-    static GATTServer* RegisterServer(const std::string& device_name);
+    static GATTServer* RegisterServer(ConfigManager* cfg_mgt);
 
     esp_err_t Init();
     esp_err_t CreateService(uint16_t uuid, uint8_t* inst_id);
@@ -109,6 +110,7 @@ class GATTServer {
     uint16_t new_char_handle_;
     uint16_t new_cccd_handle_;
 
+    ConfigManager* cfg_mgt_;
     bool is_login_ = false;
 
     // event group

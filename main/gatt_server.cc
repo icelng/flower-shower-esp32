@@ -94,6 +94,7 @@ void GATTServer::GAPEventHandler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_pa
 esp_err_t GATTServer::InitGap() {
     esp_err_t ret;
 
+    RETURN_IF_ERROR(cfg_mgt_->GetOrSetDefault(kConfigNameDeviceName, &device_name_, "CC's Flowers"));
     ret = esp_ble_gap_set_device_name(device_name_.c_str());
     if (ret) {
         ESP_LOGE(GATTS_TAG, "set device name error, error code = %x", ret);
@@ -462,16 +463,16 @@ static void gatts_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_
     g_gatt_server->GATTEventHandler(event, gatts_if, param);
 }
 
-GATTServer* GATTServer::RegisterServer(const std::string& device_name) {
+GATTServer* GATTServer::RegisterServer(ConfigManager* cfg_mgt) {
     // just support single instance now
     assert(g_gatt_server == nullptr);
-    g_gatt_server = new GATTServer(device_name);
+    g_gatt_server = new GATTServer(cfg_mgt);
     return g_gatt_server;
 }
 
-GATTServer::GATTServer(const std::string& device_name) :
+GATTServer::GATTServer(ConfigManager* cfg_mgt) :
     app_id_(0),
-    device_name_(device_name) {
+    cfg_mgt_(cfg_mgt) {
 
     adv_data_.set_scan_rsp = false;
     adv_data_.include_name = true;

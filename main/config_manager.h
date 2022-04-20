@@ -3,7 +3,6 @@
 #include "common.h"
 
 #include "esp_err.h"
-#include "freertos/event_groups.h"
 #include "nvs_handle.hpp"
 
 #include <functional>
@@ -11,6 +10,8 @@
 #include <unordered_map>
 
 namespace sd {
+
+static const std::string kConfigNameDeviceName = "device-name";
 
 class GATTServer;
 
@@ -30,7 +31,6 @@ class ConfigManager {
     void ListenValueChange(const std::string& name, const ValueChangeCallback callback);
 
 private:
-    void NotificationTask();
     void NotifyConfig(const std::string& name, const std::string& value);
 
     std::unordered_map<std::string, std::string> configs_;
@@ -43,18 +43,14 @@ private:
     Mutex cb_mutex_;
     bool is_shutdown_ = false;
     TaskHandle_t notification_task_handle_;
-    EventGroupHandle_t event_group_;
-
-    static const TickType_t kEGTimeout = 3000 / portTICK_PERIOD_MS;
-    static const EventBits_t kEGNotifyConfig = (1 << 0);
-    static const EventBits_t kEGNotificationTaskJoin = (1 << 1);
+    std::pair<std::string, std::string> config_on_standby_;
 
     static const uint32_t kMaxKeyLen = 32;
     static const uint32_t kMaxValueLen = 128;
 
-    const static uint16_t kSIDConfiguration = 0x000C;
-    const static uint16_t kCIDConfiguration = 0x0C01;
-    
+    const static uint16_t kSIDConfigManager = 0x000C;
+    const static uint16_t kCIDConfigManager = 0x0C01;
+
 };  // class Configuration
 
 }  // namespace sd
