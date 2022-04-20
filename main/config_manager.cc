@@ -20,13 +20,14 @@ esp_err_t ConfigManager::Init() {
     ESP_LOGI(LOG_TAG_CONFIG, "[INIT CONFIGURATION START]\n");
 
     RETURN_IF_ERROR(nvs_open(NVS_NS_CONFIG_MANAGER, NVS_READWRITE, &nvs_handle_));
-    auto it = nvs_entry_find(NVS_DEFAULT_PART_NAME, NVS_NS_CONFIG_MANAGER, NVS_TYPE_BLOB);
+    auto it = nvs_entry_find(NVS_DEFAULT_PART_NAME, NVS_NS_CONFIG_MANAGER, NVS_TYPE_STR);
     for (; it != nullptr; it = nvs_entry_next(it)) {
         nvs_entry_info_t entry;
         char value[kMaxValueLen + 1];
         size_t len = kMaxValueLen + 1;
         nvs_entry_info(it, &entry);
         ESP_ERROR_CHECK(nvs_get_str(nvs_handle_, entry.key, value, &len));
+        ESP_LOGI(LOG_TAG_CONFIG, "[LOAD CONFIG FROM NVS] name: %s, value: %s", entry.key, value);
         configs_.emplace(entry.key, value);
     }
 
@@ -43,7 +44,6 @@ esp_err_t ConfigManager::SetGATTServer(GATTServer* gatt_server) {
     ESP_ERROR_CHECK(gatt_server_->AddCharateristic(service_inst_id, kCIDConfigManager,
                     [&](BufferPtr* read_buf, size_t* len) {
                         auto [name, value] = config_on_standby_;
-                        ESP_LOGI(LOG_TAG_CONFIG, "[GET CONFIG] name: %s, value: %s\n", name.c_str(), value.c_str());
                         *len = 4 + name.size() + value.size();
                         *read_buf = create_unique_buf(*len);
                         auto buf = read_buf->get();
@@ -65,6 +65,8 @@ esp_err_t ConfigManager::SetGATTServer(GATTServer* gatt_server) {
                                     return;
                                 }
                                 Set(name, value);
+                                ESP_LOGI(LOG_TAG_CONFIG, "[GET CONFIG] name: %s, value: %s\n",
+                                         name.c_str(), value.c_str());
                                 break;
                             }
                             case GET: {
@@ -73,6 +75,8 @@ esp_err_t ConfigManager::SetGATTServer(GATTServer* gatt_server) {
                                 std::string value;
                                 if (Get(name, &value) == ESP_OK) {
                                     config_on_standby_ = {name, value};
+                                    ESP_LOGI(LOG_TAG_CONFIG, "[GET CONFIG] name: %s, value: %s\n",
+                                             name.c_str(), value.c_str());
                                 } else {
                                     config_on_standby_ = {"notfound", ""};
                                 }
