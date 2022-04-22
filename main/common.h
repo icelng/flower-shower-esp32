@@ -9,6 +9,7 @@
 #define LOG_TAG_MAIN "main"
 #define LOG_TAG_RTC_DS3231 "rtc_ds3231"
 #define LOG_TAG_CONFIG "configuration"
+#define LOG_TAG_WATER_ADJUSTER "water_adjuster"
 
 #define NVS_NS_MOTOR_TIMER "motor-timer"
 #define NVS_NS_CONFIG_MANAGER "config-mgt"

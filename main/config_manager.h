@@ -12,6 +12,8 @@
 namespace sd {
 
 static const std::string kConfigNameDeviceName = "device-name";
+static const std::string kConfigNameWaterSpeed = "water-speed";
+static const std::string kConfigNameWaterMLPerSecond = "ml-per-second";
 
 class GATTServer;
 

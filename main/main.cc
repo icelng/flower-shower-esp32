@@ -3,6 +3,7 @@
 #include "config_manager.h"
 #include "motor.h"
 #include "rtc_ds3231.h"
+#include "water_adjuster.h"
 
 #include "esp_debug_helpers.h"
 #include "esp_log.h"
@@ -50,6 +51,9 @@ void hello_dream(void* arg) {
     uint8_t service_inst_id;
     ESP_ERROR_CHECK(gatt_server->Init());
     ESP_ERROR_CHECK(cfg_mgt->SetGATTServer(gatt_server));
+
+    auto water_adjuster = std::make_unique<WaterAdjuster>(cfg_mgt.get(), gatt_server, motor.get());
+    water_adjuster->Init();
 
     ESP_ERROR_CHECK(gatt_server->CreateService(kSIDMotorTimer, &service_inst_id));
     ESP_ERROR_CHECK(gatt_server->AddCharateristic(service_inst_id, kCIDMotorTimer,
