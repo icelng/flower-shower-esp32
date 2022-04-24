@@ -121,6 +121,8 @@ esp_err_t ConfigManager::Set(const std::string& name, const std::string& value) 
         cb_mutex_.Unlock();
     }
 
+    ESP_LOGI(LOG_TAG_CONFIG, "[SET CONFIG] name: %s, value: %s\n", name.c_str(), value.c_str());
+
     return ESP_OK;
 }
 
@@ -133,6 +135,8 @@ esp_err_t ConfigManager::Get(const std::string& name, std::string* value) {
     }
 
     *value = it->second;
+
+    ESP_LOGI(LOG_TAG_CONFIG, "[GET CONFIG] name: %s, value: %s\n", name.c_str(), value->c_str());
 
     return ESP_OK;
 }

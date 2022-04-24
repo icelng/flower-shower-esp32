@@ -30,6 +30,7 @@ class WaterAdjuster {
     static const uint16_t kCIDWaterMLPerSecond = 0x0D03;
 
     static constexpr float kDefaultWaterSpeed = 0.8;
+    static constexpr float kDefaultWaterMLPerSecond = 1;
 };  // class WaterAdjuster
 
 }  // namespace sd

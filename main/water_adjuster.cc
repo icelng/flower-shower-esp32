@@ -56,8 +56,20 @@ esp_err_t WaterAdjuster::Init() {
 
     RETURN_IF_ERROR(gatt_server_->AddCharateristic(service_inst_id, kCIDWaterMLPerSecond,
                 [&](BufferPtr* read_buf, size_t* len) {
+                    *len = 4;
+                    *read_buf = create_unique_buf(*len);
+                    std::string ml_str;
+                    ESP_ERROR_CHECK(cfg_mgt_->GetOrSetDefault(kConfigNameWaterMLPerSecond,
+                                                              &ml_str,
+                                                              std::to_string(kDefaultWaterMLPerSecond)));
+                    *(float*)(read_buf->get()) = atof(ml_str.c_str());
                 },
                 [&](uint16_t char_handle, uint8_t* buf, size_t len) {
+                    if (len != 4) {
+                        ESP_LOGE(LOG_TAG_WATER_ADJUSTER, "Bad message len: %d", len);
+                        return;
+                    }
+                    ESP_ERROR_CHECK(cfg_mgt_->Set(kConfigNameWaterMLPerSecond, std::to_string(*(float*)buf)));
                 }));
 
     return ESP_OK;
