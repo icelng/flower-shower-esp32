@@ -10,7 +10,9 @@
 #define LOG_TAG_RTC_DS3231 "rtc_ds3231"
 #define LOG_TAG_CONFIG "configuration"
 #define LOG_TAG_WATER_ADJUSTER "water_adjuster"
+#define LOG_TAG_WATER_TIMER_MANAGER "water_timer_manager"
 
+#define NVS_NS_WATER_TIMER_MANAGER "water-timer-manager"
 #define NVS_NS_MOTOR_TIMER "motor-timer"
 #define NVS_NS_CONFIG_MANAGER "config-mgt"
 
@@ -64,6 +66,22 @@ static inline void set_system_time(time_t timestamp_s) {
     tv.tv_usec = 0;
     tz.tz_minuteswest = -480;  // GMT+8
     settimeofday(&tv, &tz);
+}
+
+static inline uint8_t next_wday(uint8_t wdays, uint8_t wday_now) {
+    if (wdays == 0) return 0xff;
+
+    uint8_t n = wday_now;
+    for (; n < 7; n++) {
+        if ((wdays >> n) & 1) return n;
+    }
+
+    n = 0;
+    for (; n < wday_now; n++) {
+        if ((wdays >> n) & 1) return n;
+    }
+
+    return n;
 }
 
 class Mutex {

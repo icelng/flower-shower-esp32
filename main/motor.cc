@@ -4,29 +4,9 @@
 
 namespace sd {
 
-Motor::Motor(const std::string motor_name) : motor_name_(motor_name),
-                                             timer_params_(kMaxNumTimers),
-                                             timer_ctxs_(kMaxNumTimers),
-                                             mutex_(std::make_unique<Mutex>()) {}
-Motor::~Motor() {
-    {
-        MutexGuard g(mutex_.get());
-        is_initiated_ = false;
-    }
+Motor::Motor(const std::string motor_name) : motor_name_(motor_name) {}
 
-    for (auto& ctx : timer_ctxs_) {
-        if (ctx) xTimerStop(ctx->timer_handle, 0);
-    }
-
-    for (auto& ctx : timer_ctxs_) {
-        if (ctx) {
-            while (xTimerIsTimerActive(ctx->timer_handle)) vTaskDelay(1);
-            xTimerDelete(ctx->timer_handle, 0);
-        }
-    }
-
-    if (nvs_handle_) nvs_close(nvs_handle_);
-}
+Motor::~Motor() {}
 
 esp_err_t Motor::Init() {
     if (is_initiated_) return ESP_OK;
@@ -34,36 +14,6 @@ esp_err_t Motor::Init() {
     ESP_LOGI(LOG_TAG_MOTOR, "[INIT MOTOR START] motor_name: %s\n", motor_name_.c_str());
 
     // init gpio before timer
-    RETURN_IF_ERROR(InitGPIO());
-
-    RETURN_IF_ERROR(nvs_open(NVS_NS_MOTOR_TIMER, NVS_READWRITE, &nvs_handle_));
-
-    auto it = nvs_entry_find(NVS_DEFAULT_PART_NAME, NVS_NS_MOTOR_TIMER, NVS_TYPE_BLOB);
-    for (; it != nullptr; it = nvs_entry_next(it)) {
-        nvs_entry_info_t entry;
-        size_t len;
-        MotorTimerParam* param = new MotorTimerParam;;
-        nvs_entry_info(it, &entry);
-        ESP_ERROR_CHECK(nvs_get_blob(nvs_handle_, entry.key, param, &len));
-        uint8_t timer_no = atoi(entry.key);
-        timer_params_[timer_no].reset(param);
-    };
-
-    for (auto& param : timer_params_) {
-        if (param.get() != nullptr) {
-            num_timers_++;
-            ESP_ERROR_CHECK(InitTimerContext(param.get()));
-        }
-    }
-
-    ESP_LOGI(LOG_TAG_MOTOR, "[INIT MOTOR END] motor_name: %s\n", motor_name_.c_str());
-
-    is_initiated_ = true;
-    return ESP_OK;
-}
-
-esp_err_t Motor::InitGPIO() {
-
     gpio_config_t config = {
         .pin_bit_mask = (1 << kGPIOMotorIN1) | (1 << kGPIOMotorIN2) | (1 << kGPIOMotorPWM) | (1 << kGPIOMotorStby),
         .mode = GPIO_MODE_OUTPUT,
@@ -100,6 +50,9 @@ esp_err_t Motor::InitGPIO() {
     gpio_set_level(kGPIOMotorIN2, 0);
     gpio_set_level(kGPIOMotorStby, 1);
 
+    ESP_LOGI(LOG_TAG_MOTOR, "[INIT MOTOR END] motor_name: %s\n", motor_name_.c_str());
+
+    is_initiated_ = true;
     return ESP_OK;
 }
 
@@ -132,108 +85,6 @@ esp_err_t Motor::Stop() {
     return ESP_OK;
 }
 
-esp_err_t Motor::CreateTimer(MotorTimerParam* param) {
-    MutexGuard g(mutex_.get());
-
-    if (!is_initiated_) return ESP_ERR_INVALID_STATE;
-
-    uint8_t new_timer_no = 0;
-    for (new_timer_no = 0; new_timer_no < timer_params_.size(); new_timer_no++) {
-        if (timer_params_[new_timer_no].get() == nullptr) break;
-    }
-    if (new_timer_no >= timer_params_.size()) {
-        return ESP_ERR_NO_MEM;
-    }
-    if (param->period_ms >= portTICK_PERIOD_MS && param->period_ms < param->duration_ms) {
-        return ESP_ERR_INVALID_ARG;
-    }
-    param->timer_no = new_timer_no;
-
-    // save to nvs
-    char nvs_timer_key[4];
-    sprintf(nvs_timer_key, "%d", new_timer_no);
-    RETURN_IF_ERROR(nvs_set_blob(nvs_handle_, nvs_timer_key, param, sizeof(MotorTimerParam)));
-
-    num_timers_++;
-    timer_params_[new_timer_no].reset(new MotorTimerParam(*param));
-
-    return InitTimerContext(param);
-}
-
-esp_err_t Motor::InitTimerContext(MotorTimerParam* param) {
-    // if the timer is not period, and is expired, there is no need to create timer context.
-    auto curtime_ms = get_curtime_ms();
-    if (param->period_ms < portTICK_PERIOD_MS &&
-        (param->first_start_timestamp + param->duration_ms) <= curtime_ms) {
-        return ESP_OK;
-    }
-
-    ESP_LOGI(LOG_TAG_MOTOR,
-             "[INIT TIMER CTX START] motor_name: %s timer_no: %d\n",
-             motor_name_.c_str(), param->timer_no);
-
-    // calculate the ticks to start motor
-    int64_t offset_from_frist_start = curtime_ms - param->first_start_timestamp;
-    TickType_t ticks_to_start;
-    bool is_running = false;
-    uint64_t ms_to_stop = 0;
-    if (offset_from_frist_start <= 0) {
-        ticks_to_start = (0 - offset_from_frist_start) / portTICK_PERIOD_MS;
-    } else {
-        uint64_t gone_ms_in_period = offset_from_frist_start;
-        if (param->period_ms > 0) {
-            gone_ms_in_period = offset_from_frist_start % param->period_ms;
-        }
-        ticks_to_start = (param->period_ms - gone_ms_in_period) / portTICK_PERIOD_MS;
-        if (gone_ms_in_period < param->duration_ms) {
-            is_running = true;
-            ms_to_stop = param->duration_ms - gone_ms_in_period;
-        }
-    }
-    // because of the timer service implemention, ticks_to_start must be greater than 0
-    ticks_to_start = ticks_to_start == 0 ? 1 : ticks_to_start;
-
-    // init timer context
-    char timer_name[16];
-    sprintf(timer_name, "motor-timer-%d", param->timer_no);
-    auto new_ctx = new MotorTimerCtx();
-    timer_ctxs_[param->timer_no].reset(new_ctx);
-    new_ctx->motor = this;
-    memcpy(&new_ctx->param, param, sizeof(struct MotorTimerParam));
-    new_ctx->timer_handle = xTimerCreate(timer_name,
-                                         ticks_to_start,
-                                         param->period_ms > 0,
-                                         new_ctx,
-                                         [](TimerHandle_t timer_handle) {
-                                            auto* ctx = (MotorTimerCtx*) pvTimerGetTimerID(timer_handle);
-                                            ctx->motor->TimerTask(ctx);
-                                         });
-    if (new_ctx->timer_handle == nullptr) {
-        return ESP_ERR_NO_MEM;
-    }
-    assert(xTimerStart(new_ctx->timer_handle, 0));
-
-    if (is_running) {
-        RETURN_IF_ERROR(Start(param->speed, ms_to_stop));
-    }
-
-    ESP_LOGI(LOG_TAG_MOTOR,
-             "[INIT TIMER CTX SUCCESSFULLY] motor_name: %s timer_no: %d\n",
-             motor_name_.c_str(), param->timer_no);
-
-    return ESP_OK;
-}
-
-void Motor::TimerTask(MotorTimerCtx* ctx) {
-    ctx->motor->Start(ctx->param.speed, ctx->param.duration_ms);
-    if (ctx->param.period_ms > 0) {
-        // first task period may be not equal to ctx->param.period_ms
-        xTimerChangePeriod(ctx->timer_handle,
-                           ctx->param.period_ms / portTICK_PERIOD_MS, 0);
-        xTimerReset(ctx->timer_handle, 0);
-    }
-}
-
 esp_err_t Motor::Start(float speed, uint64_t duration_ms) {
     RETURN_IF_ERROR(Start(speed));
 
@@ -252,115 +103,6 @@ esp_err_t Motor::Start(float speed, uint64_t duration_ms) {
         return ESP_ERR_NO_MEM;
     }
     assert(xTimerStart(timer_handle, 0));
-
-    return ESP_OK;
-}
-
-esp_err_t Motor::ListTimers(std::vector<MotorTimerParam>* timers) {
-    MutexGuard g(mutex_.get());
-
-    if (!is_initiated_) return ESP_ERR_INVALID_STATE;
-    assert(timers != nullptr);
-
-    for (auto& timer : timer_params_) {
-        if (timer) timers->push_back(*(timer.get()));
-    }
-
-    return ESP_OK;
-}
-
-esp_err_t Motor::ListTimersEncoded(BufferPtr* buf, size_t* buf_len) {
-    /*|-num_timers(1)-|-timer_no(1)-|-first_start_timestamp(8)-|-period_ms(8)-|-duration_ms(8)-|-speed(4)-|*/
-
-    MutexGuard g(mutex_.get());
-
-    if (!is_initiated_) return ESP_ERR_INVALID_STATE;
-
-    *buf_len = num_timers_ * kSizeOfEncodedTimer + 1;
-    *buf = create_unique_buf(*buf_len);
-
-    memcpy(buf->get(), &num_timers_, 1);
-
-    uint64_t offset = 1;
-    for (auto& timer : timer_params_) {
-        if (timer.get() == nullptr) continue;
-        memcpy(buf->get() + offset, &timer->timer_no, 1);
-        memcpy(buf->get() + offset + 1, &timer->first_start_timestamp, 8);
-        memcpy(buf->get() + offset + 9, &timer->period_ms, 8);
-        memcpy(buf->get() + offset + 17, &timer->duration_ms, 8);
-        memcpy(buf->get() + offset + 25, &timer->speed, 4);
-        offset += kSizeOfEncodedTimer;
-    }
-
-    return ESP_OK;
-}
-
-void Motor::DecodeTimers(uint8_t* buf, size_t buf_len, std::vector<MotorTimerParam>* timers) {
-    /*|-num_timers(1)-|-timer_no(1)-|-first_start_timestamp(8)-|-period_ms(8)-|-duration_ms(8)-|-speed(4)-|*/
-
-    uint8_t num_timers = buf[0];
-    assert(num_timers <= kMaxNumTimers);
-
-    uint64_t offset = 1;
-    for (uint8_t i = 0; i < num_timers; i++) {
-        assert(offset + kSizeOfEncodedTimer <= buf_len);
-        MotorTimerParam param;
-        param.timer_no = buf[offset];
-        param.first_start_timestamp = *((uint64_t*)&buf[offset + 1]);
-        param.period_ms = *((uint64_t*)&buf[offset + 9]);
-        param.duration_ms = *((uint64_t*)&buf[offset + 17]);
-        param.speed = *((float*)&buf[offset + 25]);
-        timers->push_back(param);
-        offset += kSizeOfEncodedTimer;
-    }
-}
-
-esp_err_t Motor::ListTimersInJson(Json* json) {
-    assert(json != nullptr);
-    MutexGuard g(mutex_.get());
-
-    if (!is_initiated_) return ESP_ERR_INVALID_STATE;
-
-    for (auto& timer : timer_params_) {
-        if (timer) {
-            Json j;
-            to_json(j, *timer.get());
-            json->emplace_back(j);
-        }
-    }
-
-    return ESP_OK;
-}
-
-esp_err_t Motor::ClearTimer(uint8_t timer_no) {
-    MutexGuard g(mutex_.get());
-
-    if (!is_initiated_) return ESP_ERR_INVALID_STATE;
-    if (timer_no >= kMaxNumTimers) return ESP_ERR_INVALID_ARG;
-    if (timer_params_[timer_no] == nullptr) return ESP_OK;
-
-    // stop timer and destroy context
-    auto* ctx = timer_ctxs_[timer_no].get();
-    xTimerStop(ctx->timer_handle, 0);
-    while (xTimerIsTimerActive(ctx->timer_handle)) vTaskDelay(1);
-    xTimerDelete(ctx->timer_handle, 0);
-
-    timer_ctxs_[timer_no].reset();
-    timer_params_[timer_no].reset();
-    num_timers_--;
-
-    // erase timer param in nvs
-    char nvs_timer_key[4];
-    sprintf(nvs_timer_key, "%d", timer_no);
-    ESP_ERROR_CHECK(nvs_erase_key(nvs_handle_, nvs_timer_key));
-
-    return ESP_OK;
-}
-
-esp_err_t Motor::ClearAllTimers() {
-    for (uint8_t timer_no = 0; timer_no < kMaxNumTimers; timer_no++) {
-        RETURN_IF_ERROR(ClearTimer(timer_no));
-    }
 
     return ESP_OK;
 }

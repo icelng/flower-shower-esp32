@@ -4,7 +4,7 @@ idf_component_register(SRCS
                        "main.cc"
                        "motor.cc"
                        "rtc_ds3231.cc"
-                       "water_adjuster.cc"
+                       "water_timer_manager.cc"
                        INCLUDE_DIRS ".")
 set(JSON_BuildTests OFF CACHE INTERNAL "")
 add_subdirectory(json)
