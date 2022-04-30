@@ -121,11 +121,15 @@ void WaterTimerManager::HandleTimerOperation(uint8_t* write_buf, size_t len) {
     /*|-op(1)-|-timer_no(1)-|-wdays(1)-|-timestamp(8)-|-ml(4)-|*/
     auto op = (WaterTimerOP)write_buf[0];
     WaterTimer timer;
+    esp_err_t ret;
     switch (op) {
         case CREATE:
             DecodeTimer(&write_buf[1], &timer);
             timer.duration_sec = (uint32_t)(timer.volume_ml / ml_per_sec_);
-            CreateTimer(timer);
+            ret = CreateTimer(timer);
+            if (ret != ESP_OK) {
+                ESP_LOGE(LOG_TAG_WATER_TIMER_MANAGER, "Failed to create water timer! err code: %d\n", ret);
+            }
             break;
         case UPDATE:
             DecodeTimer(&write_buf[1], &timer);
@@ -171,13 +175,13 @@ esp_err_t WaterTimerManager::DoSetupTimer(WaterTimerCtx* ctx) {
         char timer_name[16];
         sprintf(timer_name, "water-timer-%d", timer.timer_no);
         ctx->timer_handle = xTimerCreate(timer_name,
-                                             ticks_to_start,
-                                             pdFALSE,
-                                             ctx,
-                                             [](TimerHandle_t timer_handle) {
-                                                auto* ctx = (WaterTimerCtx*) pvTimerGetTimerID(timer_handle);
-                                                ctx->timer_mgt->StartWaterOnTime(ctx);
-                                             });
+                                         ticks_to_start,
+                                         pdFALSE,
+                                         ctx,
+                                         [](TimerHandle_t timer_handle) {
+                                            auto* ctx = (WaterTimerCtx*) pvTimerGetTimerID(timer_handle);
+                                            ctx->timer_mgt->StartWaterOnTime(ctx);
+                                         });
         if (ctx->timer_handle == nullptr) {
             return ESP_ERR_NO_MEM;
         }
@@ -213,6 +217,7 @@ esp_err_t WaterTimerManager::CreateTimer(WaterTimer& timer) {
     for (new_timer_no = 0; new_timer_no < timer_ctxs_.size(); new_timer_no++) {
         if (timer_ctxs_[new_timer_no].get() == nullptr) {
             timer.timer_no = new_timer_no;
+            break;
         }
     }
     if (new_timer_no >= timer_ctxs_.size()) {
@@ -336,7 +341,6 @@ esp_err_t WaterTimerManager::ListTimersEncoded(BufferPtr* buf, size_t* buf_len) 
 uint64_t WaterTimerManager::CalcSecsToStart(const WaterTimer& timer) {
     time_t now_timestamp_s;
     time(&now_timestamp_s);
-    now_timestamp_s += (kTimeZone * kSecsPerHour);
 
     if (timer.wdays == 0) {
         if (now_timestamp_s > timer.first_start_timestamp_s) { return UINT64_MAX; }
@@ -349,7 +353,7 @@ uint64_t WaterTimerManager::CalcSecsToStart(const WaterTimer& timer) {
     int64_t now_secs_in_day = now_timestamp_s % kSecsPerDay;
     uint8_t is_not_today = now_secs_in_day >= start_secs_in_day? 1 : 0;
     start_wday = (int)next_wday(timer.wdays, (tm->tm_wday + is_not_today) % 7);
-    auto secs_to_start = (start_wday * kSecsPerDay + start_secs_in_day) - (tm->tm_wday * kSecsPerDay + now_secs_in_day);
+    int64_t secs_to_start = (start_wday * kSecsPerDay + start_secs_in_day) - (tm->tm_wday * kSecsPerDay + now_secs_in_day);
     if (secs_to_start <= 0) { secs_to_start += kSecsPerWeek; }
 
     return secs_to_start;
@@ -365,8 +369,11 @@ bool WaterTimerManager::IsWatering(const WaterTimer& timer, uint64_t* duration_s
 
     int64_t secs_gone = (now_timestamp_s % kSecsPerDay) - (timer.first_start_timestamp_s % kSecsPerDay);
     secs_gone += (secs_gone < 0? kSecsPerDay : 0);
+    time_t start_timestamp = now_timestamp_s - secs_gone;
+    uint8_t start_wday = localtime(&start_timestamp)->tm_wday;
 
-    if (secs_gone < timer.duration_sec) {
+    if (secs_gone < timer.duration_sec &&
+        (timer.wdays == 0 || ((timer.wdays >> start_wday) & 1))) {
         if (duration_s_left) { *duration_s_left = timer.duration_sec - secs_gone; }
         return true;
     }

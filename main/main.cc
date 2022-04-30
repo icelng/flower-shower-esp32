@@ -49,7 +49,7 @@ void hello_dream(void* arg) {
     ESP_ERROR_CHECK(cfg_mgt->SetGATTServer(gatt_server));
 
     auto water_timer_mgt = std::make_unique<WaterTimerManager>(cfg_mgt.get(), gatt_server, motor.get());
-    water_timer_mgt->Init();
+    ESP_ERROR_CHECK(water_timer_mgt->Init());
 
     uint8_t service_inst_id;
     ESP_ERROR_CHECK(gatt_server->CreateService(kSIDSystemTime, &service_inst_id));

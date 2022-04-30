@@ -12,7 +12,7 @@
 #define LOG_TAG_WATER_ADJUSTER "water_adjuster"
 #define LOG_TAG_WATER_TIMER_MANAGER "water_timer_manager"
 
-#define NVS_NS_WATER_TIMER_MANAGER "water-timer-manager"
+#define NVS_NS_WATER_TIMER_MANAGER "wt-mgt"
 #define NVS_NS_MOTOR_TIMER "motor-timer"
 #define NVS_NS_CONFIG_MANAGER "config-mgt"
 
