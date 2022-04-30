@@ -20,18 +20,6 @@ esp_err_t WaterTimerManager::Init() {
     RETURN_IF_ERROR(nvs_open(NVS_NS_WATER_TIMER_MANAGER, NVS_READWRITE, &nvs_handle_));
     auto it = nvs_entry_find(NVS_DEFAULT_PART_NAME, NVS_NS_WATER_TIMER_MANAGER, NVS_TYPE_BLOB);
 
-    std::vector<WaterTimer> timers;
-    for (; it != nullptr; it = nvs_entry_next(it)) {
-        nvs_entry_info_t entry;
-        size_t len;
-        auto& timer = timers.emplace_back();
-        nvs_entry_info(it, &entry);
-        ESP_ERROR_CHECK(nvs_get_blob(nvs_handle_, entry.key, &timer, &len));
-    };
-
-    for (auto& timer : timers) {
-        ESP_ERROR_CHECK(SetupTimer(timer));
-    }
 
     std::string water_speed_str;
     ESP_ERROR_CHECK(cfg_mgt_->GetOrSetDefault(kConfigNameWaterSpeed,
@@ -44,6 +32,18 @@ esp_err_t WaterTimerManager::Init() {
                                               &ml_str,
                                               std::to_string(kDefaultWaterMLPerSecond)));
     ml_per_sec_ = atof(ml_str.c_str());
+
+    std::vector<WaterTimer> timers;
+    for (; it != nullptr; it = nvs_entry_next(it)) {
+        nvs_entry_info_t entry;
+        size_t len;
+        auto& timer = timers.emplace_back();
+        nvs_entry_info(it, &entry);
+        ESP_ERROR_CHECK(nvs_get_blob(nvs_handle_, entry.key, &timer, &len));
+    };
+    for (auto& timer : timers) {
+        ESP_ERROR_CHECK(SetupTimer(timer));
+    }
 
     ESP_ERROR_CHECK(SetupGATTService());
 
