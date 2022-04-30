@@ -55,6 +55,7 @@ class WaterTimerManager {
     esp_err_t DoSetupTimer(WaterTimerCtx* ctx);
     void StartWaterOnTime(WaterTimerCtx* ctx);
     void HandleTimerOperation(uint8_t* write_buf, size_t len);
+    void UpdateAllTimersDuration();
     static uint64_t CalcSecsToStart(const WaterTimer& timer);
     static bool IsWatering(const WaterTimer& timer, uint64_t* duration_s_left);
     static void DecodeTimer(uint8_t* buf, WaterTimer* timer);

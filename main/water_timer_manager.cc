@@ -112,6 +112,7 @@ esp_err_t WaterTimerManager::SetupGATTService() {
                     }
                     ml_per_sec_ = *(float*)buf;
                     ESP_ERROR_CHECK(cfg_mgt_->Set(kConfigNameWaterMLPerSecond, std::to_string(ml_per_sec_)));
+                    UpdateAllTimersDuration();
                 }));
 
     return ESP_OK;
@@ -141,6 +142,15 @@ void WaterTimerManager::HandleTimerOperation(uint8_t* write_buf, size_t len) {
             break;
         default:
             ESP_LOGE(LOG_TAG_WATER_TIMER_MANAGER, "Invalid OP: %d\n", op);
+    }
+}
+
+void WaterTimerManager::UpdateAllTimersDuration() {
+    std::vector<WaterTimer> timers;
+    ListTimers(&timers);
+    for (auto& timer : timers) {
+        timer.duration_sec = (uint32_t)(timer.volume_ml / ml_per_sec_);
+        UpdateTimer(timer);
     }
 }
 
@@ -248,8 +258,11 @@ esp_err_t WaterTimerManager::UpdateTimer(const WaterTimer& timer) {
     auto ctx = timer_ctxs_[timer.timer_no].get();
     if (ctx == nullptr) { return ESP_ERR_NOT_FOUND; }
 
-    ESP_LOGI(LOG_TAG_WATER_TIMER_MANAGER, "[UPDATE WATER TIMER] timer no: %d\n", timer.timer_no);
+    ESP_LOGI(LOG_TAG_WATER_TIMER_MANAGER,
+             "[UPDATE WATER TIMER] timer no: %d, wdays: %d, first_start: %lld, volume: %d, duration: %d\n",
+             timer.timer_no, timer.wdays, timer.first_start_timestamp_s, timer.volume_ml, timer.duration_sec);
 
+    ctx->timer = timer;
     RETURN_IF_ERROR(DoSetupTimer(ctx));
 
     char nvs_timer_key[4];
