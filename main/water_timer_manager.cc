@@ -147,6 +147,7 @@ void WaterTimerManager::HandleTimerOperation(uint8_t* write_buf, size_t len) {
 esp_err_t WaterTimerManager::SetupTimer(WaterTimer& timer) {
     auto* new_ctx = new WaterTimerCtx();
     timer_ctxs_[timer.timer_no].reset(new_ctx);
+    new_ctx->timer_handle = nullptr;
     new_ctx->timer_mgt = this;
     memcpy(&(new_ctx->timer), &timer, sizeof(WaterTimer));
 
