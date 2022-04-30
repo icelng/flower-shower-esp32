@@ -1,12 +1,11 @@
 #pragma once
 
-#include "gatt_server.h"
-
 #include "common.h"
 
 #include "driver/gpio.h"
 #include "driver/ledc.h"
 #include "esp_err.h"
+#include "freertos/event_groups.h"
 #include "freertos/semphr.h"
 #include "freertos/timers.h"
 #include "nvs_flash.h"
@@ -31,9 +30,19 @@ class Motor {
     esp_err_t Stop();
 
   private:
+    void TuneSpeedTask();
+
     bool is_initiated_ = false;
+    bool is_shutdown_ = false;
+    EventGroupHandle_t event_group_;
+    float speed_expected_;
+    float speed_now_;
     std::string motor_name_;
     uint32_t total_duty_ = 0;
+
+    static const TickType_t kEGTimeout = 3000 / portTICK_PERIOD_MS;
+    const static EventBits_t kEGSpeedChanged = (1 << 0);
+    const static EventBits_t kEGTuneTaskExited = (1 << 1);
 
     const static ledc_mode_t      kPWMTimerSpeedMode  = LEDC_LOW_SPEED_MODE;
     const static ledc_timer_bit_t kPWMTimerResolution = LEDC_TIMER_10_BIT;

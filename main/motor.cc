@@ -6,7 +6,13 @@ namespace sd {
 
 Motor::Motor(const std::string motor_name) : motor_name_(motor_name) {}
 
-Motor::~Motor() {}
+Motor::~Motor() {
+    is_shutdown_ = true;
+
+    xEventGroupSetBits(event_group_, kEGSpeedChanged);
+    xEventGroupWaitBits(event_group_, kEGTuneTaskExited, pdTRUE, pdTRUE, kEGTimeout);
+    vEventGroupDelete(event_group_);
+}
 
 esp_err_t Motor::Init() {
     if (is_initiated_) return ESP_OK;
@@ -52,35 +58,72 @@ esp_err_t Motor::Init() {
 
     ESP_LOGI(LOG_TAG_MOTOR, "[INIT MOTOR END] motor_name: %s\n", motor_name_.c_str());
 
+    speed_now_ = 0;
+    event_group_ = xEventGroupCreate();
+    xTaskCreate([](void* arg) { ((Motor*)arg)->TuneSpeedTask(); }, "tune-motor-speed", 4096, this, 5, NULL);
+
     is_initiated_ = true;
     return ESP_OK;
+}
+
+void Motor::TuneSpeedTask() {
+    while (true) {
+        auto wait_bits = xEventGroupWaitBits(event_group_, kEGSpeedChanged, pdTRUE, pdTRUE, kEGTimeout);
+        if (is_shutdown_) { break; }
+        if (wait_bits != kEGSpeedChanged) { continue; }
+        
+        uint32_t num_step = 50;
+        float total_dist = speed_expected_ - speed_now_;
+        float step_dist = total_dist / num_step;
+
+        for (int i = 0; i < num_step; i++) {
+            speed_now_ += step_dist;
+
+            if (speed_now_ > 0) {
+                gpio_set_level(kGPIOMotorIN1, 1);
+                gpio_set_level(kGPIOMotorIN2, 0);
+            } else {
+                gpio_set_level(kGPIOMotorIN1, 0);
+                gpio_set_level(kGPIOMotorIN2, 1);
+            }
+            gpio_set_level(kGPIOMotorStby, 1);
+
+            auto duty_cnt = speed_now_ * kPWMDutyTotalCnt;
+            ESP_ERROR_CHECK(ledc_set_duty(kPWMTimerSpeedMode, kPWMTimerChannel, duty_cnt));
+            ESP_ERROR_CHECK(ledc_update_duty(kPWMTimerSpeedMode, kPWMTimerChannel));
+
+            vTaskDelay(20 / portTICK_PERIOD_MS);
+        }
+
+        if (speed_now_ > -0.01 && speed_now_ < 0.01) {
+            gpio_set_level(kGPIOMotorIN1, 0);
+            gpio_set_level(kGPIOMotorIN2, 0);
+            gpio_set_level(kGPIOMotorStby, 0);
+
+            ESP_ERROR_CHECK(ledc_set_duty(kPWMTimerSpeedMode, kPWMTimerChannel, 0));
+            ESP_ERROR_CHECK(ledc_update_duty(kPWMTimerSpeedMode, kPWMTimerChannel));
+        }
+
+    }
+    
+    xEventGroupSetBits(event_group_, kEGTuneTaskExited);
+    vTaskDelete(nullptr);
 }
 
 esp_err_t Motor::Start(float speed) {
     ESP_LOGI(LOG_TAG_MOTOR, "[START MOTOR] motor_name: %s, speed: %f\n", motor_name_.c_str(), speed);
 
-    if (speed > 0) {
-        gpio_set_level(kGPIOMotorIN1, 1);
-        gpio_set_level(kGPIOMotorIN2, 0);
-    } else {
-        gpio_set_level(kGPIOMotorIN1, 0);
-        gpio_set_level(kGPIOMotorIN2, 1);
-    }
-
-    auto duty_cnt = speed * kPWMDutyTotalCnt;
-    ESP_ERROR_CHECK(ledc_set_duty(kPWMTimerSpeedMode, kPWMTimerChannel, duty_cnt));
-    ESP_ERROR_CHECK(ledc_update_duty(kPWMTimerSpeedMode, kPWMTimerChannel));
+    speed_expected_ = speed;
+    xEventGroupSetBits(event_group_, kEGSpeedChanged);
 
     return ESP_OK;
 }
 
 esp_err_t Motor::Stop() {
     ESP_LOGI(LOG_TAG_MOTOR, "[STOP MOTOR] motor_name: %s\n", motor_name_.c_str());
-    gpio_set_level(kGPIOMotorIN1, 0);
-    gpio_set_level(kGPIOMotorIN2, 0);
 
-    ESP_ERROR_CHECK(ledc_set_duty(kPWMTimerSpeedMode, kPWMTimerChannel, 0));
-    ESP_ERROR_CHECK(ledc_update_duty(kPWMTimerSpeedMode, kPWMTimerChannel));
+    speed_expected_ = 0;
+    xEventGroupSetBits(event_group_, kEGSpeedChanged);
 
     return ESP_OK;
 }
