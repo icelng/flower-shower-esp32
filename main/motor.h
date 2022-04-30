@@ -36,7 +36,7 @@ class Motor {
     uint32_t total_duty_ = 0;
 
     const static ledc_mode_t      kPWMTimerSpeedMode  = LEDC_LOW_SPEED_MODE;
-    const static ledc_timer_bit_t kPWMTimerResolution = LEDC_TIMER_13_BIT;
+    const static ledc_timer_bit_t kPWMTimerResolution = LEDC_TIMER_10_BIT;
     const static ledc_timer_t     kPWMTimerNum        = LEDC_TIMER_0;
     const static ledc_channel_t   kPWMTimerChannel    = LEDC_CHANNEL_0;
     const static uint32_t         kPWMDutyTotalCnt    = 1 << kPWMTimerResolution;

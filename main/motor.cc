@@ -30,7 +30,7 @@ esp_err_t Motor::Init() {
         .duty_resolution  = kPWMTimerResolution,
         .timer_num        = kPWMTimerNum,
         .freq_hz          = 5000,  // Set output frequency at 5 kHz
-        .clk_cfg          = LEDC_AUTO_CLK
+        .clk_cfg          = LEDC_USE_RTC8M_CLK
     };
     ESP_ERROR_CHECK(ledc_timer_config(&ledc_timer));
 
