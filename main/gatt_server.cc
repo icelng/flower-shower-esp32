@@ -675,7 +675,9 @@ esp_err_t GATTServer::Init() {
                     memset((*read_buf).get(), is_login_, 1);
                 },
                 [&](uint16_t char_handle, uint8_t* write_buf, size_t len) {
-                    if (strcmp((char*)write_buf, "ccyyds") == 0) {
+                    std::string password;
+                    cfg_mgt_->GetOrSetDefault(kConfigNameLoginPassword, &password, "ccyyds");
+                    if (strcmp((char*)write_buf, password.c_str()) == 0) {
                         ESP_LOGI(LOG_TAG_MAIN, "[LOGIN SUCCEED]\n");
                         is_login_ = true;
                     } else {
