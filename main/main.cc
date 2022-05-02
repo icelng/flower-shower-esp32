@@ -25,6 +25,9 @@ namespace sd {
 const static uint16_t kSIDSystemTime = 0x00FF;
 const static uint16_t kCIDSystemTime = 0xFF01;
 
+const static gpio_num_t kGPIOLED = GPIO_NUM_5;
+const static uint32_t kDefaultLEDLevel = 1;
+
 enum MotorTimerOP {
     ADD = 1, MOD, DEL, START, STOP
 };
@@ -64,6 +67,24 @@ void hello_dream(void* arg) {
                     set_system_time(timestamp_s);
                     rtc->SetTime(timestamp_s);
                 }));
+
+    // init led
+    gpio_config_t config = {
+        .pin_bit_mask = 1 << kGPIOLED,
+        .mode = GPIO_MODE_OUTPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+    ESP_ERROR_CHECK(gpio_config(&config));
+
+    std::string led_level_str;
+    cfg_mgt->GetOrSetDefault(kConfigNameLedLevel, &led_level_str, std::to_string(kDefaultLEDLevel));
+    gpio_set_level(kGPIOLED, atoi(led_level_str.c_str()) > 0? 1 : 0);
+
+    cfg_mgt->ListenValueChange(kConfigNameLedLevel, [&](const std::string& value) {
+        gpio_set_level(kGPIOLED, atoi(value.c_str()) > 0? 1 : 0);
+    });
 
     while (true) {
         vTaskDelay(10000 / portTICK_PERIOD_MS);
