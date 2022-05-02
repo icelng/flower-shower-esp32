@@ -56,6 +56,7 @@ class WaterTimerManager {
     void StartWaterOnTime(WaterTimerCtx* ctx);
     void HandleTimerOperation(uint8_t* write_buf, size_t len);
     void UpdateAllTimersDuration();
+    void ReloadAllTimers();
     static uint64_t CalcSecsToStart(const WaterTimer& timer);
     static bool IsWatering(const WaterTimer& timer, uint64_t* duration_s_left);
     static void DecodeTimer(uint8_t* buf, WaterTimer* timer);
@@ -64,6 +65,7 @@ class WaterTimerManager {
     GATTServer* gatt_server_;
     Motor* motor_;
     nvs_handle_t nvs_handle_;
+    TimerHandle_t reload_timer_handle_ = nullptr;
     std::vector<std::unique_ptr<WaterTimerCtx>> timer_ctxs_;
     std::unique_ptr<Mutex> mutex_;
 

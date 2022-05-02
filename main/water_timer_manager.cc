@@ -12,7 +12,18 @@ WaterTimerManager::WaterTimerManager(ConfigManager* cfg_mgt, GATTServer* gatt_se
       timer_ctxs_(kMaxNumTimers),
       mutex_(std::make_unique<Mutex>()) {}
 
-WaterTimerManager::~WaterTimerManager() {}
+WaterTimerManager::~WaterTimerManager() {
+    xTimerStop(reload_timer_handle_, 0);
+    while (xTimerIsTimerActive(reload_timer_handle_)) vTaskDelay(1);
+    xTimerDelete(reload_timer_handle_, 0);
+
+    for (auto& ctx : timer_ctxs_) {
+        xTimerStop(ctx->timer_handle, 0);
+        while (xTimerIsTimerActive(ctx->timer_handle)) vTaskDelay(1);
+        xTimerDelete(ctx->timer_handle, 0);
+        ctx.reset();
+    }
+}
 
 esp_err_t WaterTimerManager::Init() {
     ESP_LOGI(LOG_TAG_WATER_TIMER_MANAGER, "[INIT WATER TIMER MANAGER START]");
@@ -46,6 +57,16 @@ esp_err_t WaterTimerManager::Init() {
     }
 
     ESP_ERROR_CHECK(SetupGATTService());
+
+    reload_timer_handle_ = xTimerCreate("reload-wt",
+                                        60000 / portTICK_PERIOD_MS,
+                                        pdTRUE, this,
+                                        [](TimerHandle_t timer_handle) {
+                                           auto* wtm = (WaterTimerManager*)pvTimerGetTimerID(timer_handle);
+                                           wtm->ReloadAllTimers();
+                                       });
+    assert(reload_timer_handle_ != nullptr);
+    assert(xTimerStart(reload_timer_handle_, 0));
 
     ESP_LOGI(LOG_TAG_WATER_TIMER_MANAGER, "[INIT WATER TIMER MANAGER SUCCEED]");
 
@@ -152,6 +173,19 @@ void WaterTimerManager::UpdateAllTimersDuration() {
         timer.duration_sec = (uint32_t)(timer.volume_ml / ml_per_sec_);
         UpdateTimer(timer);
     }
+}
+
+void WaterTimerManager::ReloadAllTimers() {
+    // just for avoiding the drift of timer
+    MutexGuard g(mutex_.get());
+    uint32_t num_timers = 0;
+    for (auto& ctx : timer_ctxs_) {
+        if (ctx.get() != nullptr) {
+            num_timers++;
+            DoSetupTimer(ctx.get());
+        }
+    }
+    ESP_LOGI(LOG_TAG_WATER_TIMER_MANAGER, "[RELOAD ALL WATER TIMERS] num timers: %d", num_timers);
 }
 
 esp_err_t WaterTimerManager::SetupTimer(WaterTimer& timer) {
