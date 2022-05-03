@@ -26,6 +26,7 @@ const static uint16_t kSIDSystemTime = 0x00FF;
 const static uint16_t kCIDSystemTime = 0xFF01;
 
 const static gpio_num_t kGPIOLED = GPIO_NUM_5;
+const static gpio_num_t kGPIOHumidityEn = GPIO_NUM_18;
 const static uint32_t kDefaultLEDLevel = 1;
 
 enum MotorTimerOP {
@@ -68,9 +69,9 @@ void hello_dream(void* arg) {
                     rtc->SetTime(timestamp_s);
                 }));
 
-    // init led
+    // init led and humidity
     gpio_config_t config = {
-        .pin_bit_mask = 1 << kGPIOLED,
+        .pin_bit_mask = 1 << kGPIOLED | 1 << kGPIOHumidityEn,
         .mode = GPIO_MODE_OUTPUT,
         .pull_up_en = GPIO_PULLUP_ENABLE,
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
@@ -85,6 +86,9 @@ void hello_dream(void* arg) {
     cfg_mgt->ListenValueChange(kConfigNameLedLevel, [&](const std::string& value) {
         gpio_set_level(kGPIOLED, atoi(value.c_str()) > 0? 1 : 0);
     });
+
+    // unsupport humidity now
+    gpio_set_level(kGPIOHumidityEn, 0);
 
     while (true) {
         vTaskDelay(10000 / portTICK_PERIOD_MS);
