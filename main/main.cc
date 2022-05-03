@@ -39,6 +39,10 @@ void hello_dream(void* arg) {
     esp_pm_config_esp32_t pm_config = {.max_freq_mhz = 240, .min_freq_mhz = 40, .light_sleep_enable = true};
     ESP_ERROR_CHECK(esp_pm_configure(&pm_config));
 
+    esp_pm_lock_handle_t pm_lock;
+    ESP_ERROR_CHECK(esp_pm_lock_create(ESP_PM_APB_FREQ_MAX, 0, "main-init", &pm_lock));
+    ESP_ERROR_CHECK(esp_pm_lock_acquire(pm_lock));
+
     auto cfg_mgt = std::make_unique<ConfigManager>();
     cfg_mgt->Init();
 
@@ -89,6 +93,9 @@ void hello_dream(void* arg) {
 
     // unsupport humidity now
     gpio_set_level(kGPIOHumidityEn, 0);
+
+    ESP_ERROR_CHECK(esp_pm_lock_release(pm_lock));
+    esp_pm_lock_delete(pm_lock);
 
     while (true) {
         vTaskDelay(10000 / portTICK_PERIOD_MS);
