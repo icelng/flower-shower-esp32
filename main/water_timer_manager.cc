@@ -94,14 +94,21 @@ esp_err_t WaterTimerManager::SetupGATTService() {
                     auto op = (WaterOP)*buf;
                     switch (op) {
                         case START: {
-                            motor_->Start(water_speed_);
+                            if (len == 1) {
+                                motor_->Start(water_speed_);
+                            } else if (len == 5){
+                                auto water_speed = *(float*)&buf[1];
+                                motor_->Start(water_speed);
+                            } else {
+                                ESP_LOGE(LOG_TAG_WATER_ADJUSTER, "Bad messge for op: %d\n", op);
+                            }
                             break;
                         }
                         case STOP:
                             motor_->Stop();
                         break;
                         default:
-                        ESP_LOGE(LOG_TAG_WATER_ADJUSTER, "Invalid water op: %d\n", op);
+                            ESP_LOGE(LOG_TAG_WATER_ADJUSTER, "Invalid water op: %d\n", op);
                     }
                 }));
 
