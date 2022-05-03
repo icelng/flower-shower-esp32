@@ -65,6 +65,15 @@ esp_err_t Motor::Init() {
     event_group_ = xEventGroupCreate();
     xTaskCreate([](void* arg) { ((Motor*)arg)->TuneSpeedTask(); }, "tune-motor-speed", 4096, this, 5, NULL);
 
+    stop_timer_handle_ = xTimerCreate("stop-motor",
+                                      1,
+                                      pdFALSE, this,
+                                      [](TimerHandle_t timer_handle) {
+                                         auto* motor = (Motor*) pvTimerGetTimerID(timer_handle);
+                                         motor->Stop();
+                                      });
+    assert(stop_timer_handle_ != nullptr);
+
     is_initiated_ = true;
     return ESP_OK;
 }
@@ -146,17 +155,8 @@ esp_err_t Motor::Start(float speed, uint64_t duration_ms) {
 
     TickType_t ticks_to_stop = duration_ms / portTICK_PERIOD_MS;
     ticks_to_stop = ticks_to_stop == 0 ? 1 : ticks_to_stop;
-    auto timer_handle = xTimerCreate("motor-timer-stop",
-                                     ticks_to_stop,
-                                     pdFALSE, this,
-                                     [](TimerHandle_t timer_handle) {
-                                        auto* motor = (Motor*) pvTimerGetTimerID(timer_handle);
-                                        motor->Stop();
-                                     });
-    if (timer_handle == nullptr) {
-        return ESP_ERR_NO_MEM;
-    }
-    assert(xTimerStart(timer_handle, 0));
+    xTimerChangePeriod(stop_timer_handle_, ticks_to_stop, 0);
+    xTimerReset(stop_timer_handle_, 0);
 
     return ESP_OK;
 }

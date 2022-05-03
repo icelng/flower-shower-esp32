@@ -42,6 +42,7 @@ class Motor {
     std::string motor_name_;
     esp_pm_lock_handle_t pm_lock_;
     uint32_t total_duty_ = 0;
+    TimerHandle_t stop_timer_handle_;
 
     static const TickType_t kEGTimeout = 3000 / portTICK_PERIOD_MS;
     const static EventBits_t kEGSpeedChanged = (1 << 0);
