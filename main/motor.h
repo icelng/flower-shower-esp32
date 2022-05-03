@@ -5,6 +5,7 @@
 #include "driver/gpio.h"
 #include "driver/ledc.h"
 #include "esp_err.h"
+#include "esp_pm.h"
 #include "freertos/event_groups.h"
 #include "freertos/semphr.h"
 #include "freertos/timers.h"
@@ -37,7 +38,9 @@ class Motor {
     EventGroupHandle_t event_group_;
     float speed_expected_;
     float speed_now_;
+    bool isStby = false;
     std::string motor_name_;
+    esp_pm_lock_handle_t pm_lock_;
     uint32_t total_duty_ = 0;
 
     static const TickType_t kEGTimeout = 3000 / portTICK_PERIOD_MS;
@@ -46,6 +49,8 @@ class Motor {
 
     const static ledc_mode_t      kPWMTimerSpeedMode  = LEDC_LOW_SPEED_MODE;
     const static ledc_timer_bit_t kPWMTimerResolution = LEDC_TIMER_10_BIT;
+    const static uint32_t         kPWMTimerFreqHz     = 20000;
+    const static ledc_clk_cfg_t   kPWMTimerClkSrc     = LEDC_USE_APB_CLK;  // 40MHz
     const static ledc_timer_t     kPWMTimerNum        = LEDC_TIMER_0;
     const static ledc_channel_t   kPWMTimerChannel    = LEDC_CHANNEL_0;
     const static uint32_t         kPWMDutyTotalCnt    = 1 << kPWMTimerResolution;

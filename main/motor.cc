@@ -12,12 +12,15 @@ Motor::~Motor() {
     xEventGroupSetBits(event_group_, kEGSpeedChanged);
     xEventGroupWaitBits(event_group_, kEGTuneTaskExited, pdTRUE, pdTRUE, kEGTimeout);
     vEventGroupDelete(event_group_);
+    esp_pm_lock_delete(pm_lock_);
 }
 
 esp_err_t Motor::Init() {
     if (is_initiated_) return ESP_OK;
 
     ESP_LOGI(LOG_TAG_MOTOR, "[INIT MOTOR START] motor_name: %s\n", motor_name_.c_str());
+
+    ESP_ERROR_CHECK(esp_pm_lock_create(ESP_PM_APB_FREQ_MAX, 0, "motor", &pm_lock_));
 
     // init gpio before timer
     gpio_config_t config = {
@@ -35,8 +38,8 @@ esp_err_t Motor::Init() {
         .speed_mode       = kPWMTimerSpeedMode,
         .duty_resolution  = kPWMTimerResolution,
         .timer_num        = kPWMTimerNum,
-        .freq_hz          = 5000,  // Set output frequency at 5 kHz
-        .clk_cfg          = LEDC_USE_RTC8M_CLK
+        .freq_hz          = kPWMTimerFreqHz,
+        .clk_cfg          = kPWMTimerClkSrc
     };
     ESP_ERROR_CHECK(ledc_timer_config(&ledc_timer));
 
@@ -71,7 +74,7 @@ void Motor::TuneSpeedTask() {
         auto wait_bits = xEventGroupWaitBits(event_group_, kEGSpeedChanged, pdTRUE, pdTRUE, kEGTimeout);
         if (is_shutdown_) { break; }
         if (wait_bits != kEGSpeedChanged) { continue; }
-        
+
         uint32_t num_step = 50;
         float total_dist = speed_expected_ - speed_now_;
         float step_dist = total_dist / num_step;
@@ -86,7 +89,11 @@ void Motor::TuneSpeedTask() {
                 gpio_set_level(kGPIOMotorIN1, 0);
                 gpio_set_level(kGPIOMotorIN2, 1);
             }
-            gpio_set_level(kGPIOMotorStby, 1);
+            if (isStby) {
+                isStby = false;
+                gpio_set_level(kGPIOMotorStby, 1);  // low level is stby
+                esp_pm_lock_acquire(pm_lock_);
+            }
 
             auto duty_cnt = speed_now_ * kPWMDutyTotalCnt;
             ESP_ERROR_CHECK(ledc_set_duty(kPWMTimerSpeedMode, kPWMTimerChannel, duty_cnt));
@@ -98,14 +105,18 @@ void Motor::TuneSpeedTask() {
         if (speed_now_ > -0.01 && speed_now_ < 0.01) {
             gpio_set_level(kGPIOMotorIN1, 0);
             gpio_set_level(kGPIOMotorIN2, 0);
-            gpio_set_level(kGPIOMotorStby, 0);
+            if (!isStby) {
+                isStby = true;
+                gpio_set_level(kGPIOMotorStby, 0);
+                esp_pm_lock_release(pm_lock_);
+            }
 
             ESP_ERROR_CHECK(ledc_set_duty(kPWMTimerSpeedMode, kPWMTimerChannel, 0));
             ESP_ERROR_CHECK(ledc_update_duty(kPWMTimerSpeedMode, kPWMTimerChannel));
         }
 
     }
-    
+
     xEventGroupSetBits(event_group_, kEGTuneTaskExited);
     vTaskDelete(nullptr);
 }
