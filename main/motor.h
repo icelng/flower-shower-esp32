@@ -38,7 +38,7 @@ class Motor {
     EventGroupHandle_t event_group_;
     float speed_expected_;
     float speed_now_;
-    bool isStby = false;
+    bool isStby_ = true;
     std::string motor_name_;
     esp_pm_lock_handle_t pm_lock_;
     uint32_t total_duty_ = 0;

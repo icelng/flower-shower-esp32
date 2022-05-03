@@ -57,9 +57,8 @@ esp_err_t Motor::Init() {
 
     gpio_set_level(kGPIOMotorIN1, 0);
     gpio_set_level(kGPIOMotorIN2, 0);
-    gpio_set_level(kGPIOMotorStby, 1);
-
-    ESP_LOGI(LOG_TAG_MOTOR, "[INIT MOTOR END] motor_name: %s\n", motor_name_.c_str());
+    gpio_set_level(kGPIOMotorStby, 0);  // low level is stby
+    isStby_ = true;
 
     speed_now_ = 0;
     event_group_ = xEventGroupCreate();
@@ -75,6 +74,9 @@ esp_err_t Motor::Init() {
     assert(stop_timer_handle_ != nullptr);
 
     is_initiated_ = true;
+
+    ESP_LOGI(LOG_TAG_MOTOR, "[INIT MOTOR END] motor_name: %s\n", motor_name_.c_str());
+
     return ESP_OK;
 }
 
@@ -98,8 +100,9 @@ void Motor::TuneSpeedTask() {
                 gpio_set_level(kGPIOMotorIN1, 0);
                 gpio_set_level(kGPIOMotorIN2, 1);
             }
-            if (isStby) {
-                isStby = false;
+            if (isStby_) {
+                ESP_LOGI(LOG_TAG_MOTOR, "[ACQUIRE PM LOCK]");
+                isStby_ = false;
                 gpio_set_level(kGPIOMotorStby, 1);  // low level is stby
                 esp_pm_lock_acquire(pm_lock_);
             }
@@ -114,8 +117,9 @@ void Motor::TuneSpeedTask() {
         if (speed_now_ > -0.01 && speed_now_ < 0.01) {
             gpio_set_level(kGPIOMotorIN1, 0);
             gpio_set_level(kGPIOMotorIN2, 0);
-            if (!isStby) {
-                isStby = true;
+            if (!isStby_) {
+                ESP_LOGI(LOG_TAG_MOTOR, "[RELEASE PM LOCK]");
+                isStby_ = true;
                 gpio_set_level(kGPIOMotorStby, 0);
                 esp_pm_lock_release(pm_lock_);
             }

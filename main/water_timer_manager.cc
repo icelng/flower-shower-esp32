@@ -167,7 +167,10 @@ void WaterTimerManager::HandleTimerOperation(uint8_t* write_buf, size_t len) {
             break;
         case DEL:
             /*|-op(1)-|-timer_no(1)-|*/
-            ESP_LOGE(LOG_TAG_WATER_TIMER_MANAGER, "Bad message for op DEL\n");
+            if (len != 2) {
+                ESP_LOGE(LOG_TAG_WATER_TIMER_MANAGER, "Bad message for op DEL\n");
+                return;
+            }
             DelTimer(write_buf[1]);
             break;
         case STOP_NOW:
