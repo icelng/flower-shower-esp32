@@ -10,6 +10,7 @@
 #include "nvs.h"
 #include "nvs_handle.hpp"
 
+#include <unordered_map>
 #include <vector>
 
 namespace sd {
@@ -37,7 +38,7 @@ class WaterTimerManager {
 
   private:
     enum WaterTimerOP {
-        CREATE = 0, UPDATE, DEL
+        CREATE = 0, UPDATE, DEL, STOP_NOW
     };
 
     enum WaterOP {
@@ -48,6 +49,7 @@ class WaterTimerManager {
         WaterTimerManager* timer_mgt;
         WaterTimer timer;
         TimerHandle_t timer_handle = nullptr;
+        uint64_t stopped_until = 0;
     };
 
     esp_err_t SetupGATTService();
@@ -57,8 +59,9 @@ class WaterTimerManager {
     void HandleTimerOperation(uint8_t* write_buf, size_t len);
     void UpdateAllTimersDuration();
     void ReloadAllTimers();
+    void StopTimerNow(uint8_t timer_no);
     static uint64_t CalcSecsToStart(const WaterTimer& timer);
-    static bool IsWatering(const WaterTimer& timer, uint64_t* duration_s_left);
+    static bool IsWatering(const WaterTimerCtx* ctx, uint64_t* duration_s_left);
     static void DecodeTimer(uint8_t* buf, WaterTimer* timer);
 
     ConfigManager* cfg_mgt_;

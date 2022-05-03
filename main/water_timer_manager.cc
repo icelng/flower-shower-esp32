@@ -166,11 +166,39 @@ void WaterTimerManager::HandleTimerOperation(uint8_t* write_buf, size_t len) {
             UpdateTimer(timer);
             break;
         case DEL:
+            /*|-op(1)-|-timer_no(1)-|*/
+            ESP_LOGE(LOG_TAG_WATER_TIMER_MANAGER, "Bad message for op DEL\n");
             DelTimer(write_buf[1]);
+            break;
+        case STOP_NOW:
+            /*|-op(1)-|-timer_no(1)-|*/
+            if (len != 2) {
+                ESP_LOGE(LOG_TAG_WATER_TIMER_MANAGER, "Bad message for op STOP_NOW\n");
+                return;
+            }
+            StopTimerNow(write_buf[1]);
             break;
         default:
             ESP_LOGE(LOG_TAG_WATER_TIMER_MANAGER, "Invalid OP: %d\n", op);
     }
+}
+
+void WaterTimerManager::StopTimerNow(uint8_t timer_no) {
+    if (timer_no > kMaxNumTimers) return;
+
+    MutexGuard g(mutex_.get());
+
+    if (!timer_ctxs_[timer_no]) return;
+
+    auto* ctx = timer_ctxs_[timer_no].get();
+    uint64_t secs_to_stop;
+    if (!IsWatering(ctx, &secs_to_stop)) return;
+    ctx->stopped_until = get_curtime_s() + secs_to_stop;
+    motor_->Stop();
+
+    ESP_LOGI(LOG_TAG_WATER_TIMER_MANAGER,
+             "[STOP WATER TIMER] timer_no: %d, stop until: %lld",
+             timer_no, ctx->stopped_until);
 }
 
 void WaterTimerManager::UpdateAllTimersDuration() {
@@ -212,7 +240,7 @@ esp_err_t WaterTimerManager::DoSetupTimer(WaterTimerCtx* ctx) {
     if (secs_to_start == UINT64_MAX) {
         if (ctx->timer_handle != nullptr) { assert(xTimerStop(ctx->timer_handle, 0)); }
         uint64_t duration_s_left;
-        if (IsWatering(timer, &duration_s_left)) { motor_->Start(water_speed_, duration_s_left * 1000); }
+        if (IsWatering(ctx, &duration_s_left)) { motor_->Start(water_speed_, duration_s_left * 1000); }
         return ESP_OK;
     }
     TickType_t ticks_to_start = secs_to_start * 1000 / portTICK_PERIOD_MS;
@@ -241,7 +269,7 @@ esp_err_t WaterTimerManager::DoSetupTimer(WaterTimerCtx* ctx) {
     }
 
     uint64_t duration_s_left = 0;
-    if (IsWatering(timer, &duration_s_left)) {
+    if (IsWatering(ctx, &duration_s_left)) {
         motor_->Start(water_speed_, duration_s_left * 1000);
     }
 
@@ -253,7 +281,9 @@ void WaterTimerManager::StartWaterOnTime(WaterTimerCtx* ctx) {
 
     auto& timer = ctx->timer;
 
-    motor_->Start(water_speed_, timer.duration_sec * 1000);
+    if (get_curtime_s() < ctx->stopped_until) {
+        motor_->Start(water_speed_, timer.duration_sec * 1000);
+    }
 
     auto secs_to_next_start = CalcSecsToStart(timer);
     if (secs_to_next_start == UINT64_MAX) { return; }
@@ -414,7 +444,10 @@ uint64_t WaterTimerManager::CalcSecsToStart(const WaterTimer& timer) {
     return secs_to_start;
 }
 
-bool WaterTimerManager::IsWatering(const WaterTimer& timer, uint64_t* duration_s_left) {
+bool WaterTimerManager::IsWatering(const WaterTimerCtx* ctx, uint64_t* duration_s_left) {
+    if (get_curtime_s() < ctx->stopped_until) return false;
+
+    auto& timer = ctx->timer;
     assert(timer.duration_sec < kSecsPerDay);
 
     time_t now_timestamp_s;
