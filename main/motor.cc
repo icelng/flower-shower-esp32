@@ -153,9 +153,14 @@ esp_err_t Motor::Stop() {
 }
 
 esp_err_t Motor::Start(float speed, uint64_t duration_ms) {
-    RETURN_IF_ERROR(Start(speed));
+    ESP_LOGI(LOG_TAG_MOTOR,
+             "[START MOTOR] motor_name: %s, speed: %f, duration_ms: %lld\n",
+             motor_name_.c_str(), speed, duration_ms);
 
     if (duration_ms == 0) { return ESP_OK; }
+
+    speed_expected_ = speed;
+    xEventGroupSetBits(event_group_, kEGSpeedChanged);
 
     TickType_t ticks_to_stop = duration_ms / portTICK_PERIOD_MS;
     ticks_to_stop = ticks_to_stop == 0 ? 1 : ticks_to_stop;

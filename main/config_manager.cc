@@ -65,8 +65,6 @@ esp_err_t ConfigManager::SetGATTServer(GATTServer* gatt_server) {
                                     return;
                                 }
                                 Set(name, value);
-                                ESP_LOGI(LOG_TAG_CONFIG, "[GET CONFIG] name: %s, value: %s\n",
-                                         name.c_str(), value.c_str());
                                 break;
                             }
                             case GET: {
@@ -75,8 +73,6 @@ esp_err_t ConfigManager::SetGATTServer(GATTServer* gatt_server) {
                                 std::string value;
                                 if (Get(name, &value) == ESP_OK) {
                                     config_on_standby_ = {name, value};
-                                    ESP_LOGI(LOG_TAG_CONFIG, "[GET CONFIG] name: %s, value: %s\n",
-                                             name.c_str(), value.c_str());
                                 } else {
                                     config_on_standby_ = {"notfound", ""};
                                 }

@@ -200,7 +200,7 @@ void WaterTimerManager::StopTimerNow(uint8_t timer_no) {
     motor_->Stop();
 
     ESP_LOGI(LOG_TAG_WATER_TIMER_MANAGER,
-             "[STOP WATER TIMER] timer_no: %d, stop until: %lld",
+             "[STOP WATER TIMER] timer_no: %d, until: %lld",
              timer_no, ctx->stopped_until);
 }
 
@@ -281,12 +281,13 @@ esp_err_t WaterTimerManager::DoSetupTimer(WaterTimerCtx* ctx) {
 }
 
 void WaterTimerManager::StartWaterOnTime(WaterTimerCtx* ctx) {
-    ESP_LOGI(LOG_TAG_WATER_TIMER_MANAGER, "[START WATER ON TIME]\n");
-
     auto& timer = ctx->timer;
 
-    if (get_curtime_s() < ctx->stopped_until) {
-        motor_->Start(water_speed_, timer.duration_sec * 1000);
+    ESP_LOGI(LOG_TAG_WATER_TIMER_MANAGER, "[TIME TO START WATER] timer_no: %d\n", timer.timer_no);
+
+    uint64_t duration_sec = 0;
+    if (IsWatering(ctx, &duration_sec)) {
+        motor_->Start(water_speed_, duration_sec * 1000);
     }
 
     auto secs_to_next_start = CalcSecsToStart(timer);
@@ -395,6 +396,10 @@ esp_err_t WaterTimerManager::ListTimers(std::vector<WaterTimer>* timers) {
         if (ctx) timers->push_back(ctx->timer);
     }
 
+    ESP_LOGI(LOG_TAG_WATER_TIMER_MANAGER,
+             "[LIST WATER TIMERS] num timers: %d\n",
+             timers->size());
+
     return ESP_OK;
 }
 
@@ -425,6 +430,10 @@ esp_err_t WaterTimerManager::ListTimersEncoded(BufferPtr* buf, size_t* buf_len) 
         offset += kSizeOfEncodedTimer;
     }
 
+    ESP_LOGI(LOG_TAG_WATER_TIMER_MANAGER,
+             "[LIST WATER TIMERS] num timers: %d\n",
+             num_timers);
+
     return ESP_OK;
 }
 
@@ -450,7 +459,13 @@ uint64_t WaterTimerManager::CalcSecsToStart(const WaterTimer& timer) {
 }
 
 bool WaterTimerManager::IsWatering(const WaterTimerCtx* ctx, uint64_t* duration_s_left) {
-    if (get_curtime_s() < ctx->stopped_until) return false;
+    if (get_curtime_s() < ctx->stopped_until) {
+        ESP_LOGI(LOG_TAG_WATER_TIMER_MANAGER,
+                 "[TIMER IS STOPPED] timer_no: %d, until: %lld\n",
+                 ctx->timer.timer_no,
+                 ctx->stopped_until);
+        return false;
+    }
 
     auto& timer = ctx->timer;
     assert(timer.duration_sec < kSecsPerDay);
@@ -468,6 +483,9 @@ bool WaterTimerManager::IsWatering(const WaterTimerCtx* ctx, uint64_t* duration_
     if (secs_gone < timer.duration_sec &&
         (timer.wdays == 0 || ((timer.wdays >> start_wday) & 1))) {
         if (duration_s_left) { *duration_s_left = timer.duration_sec - secs_gone; }
+        ESP_LOGI(LOG_TAG_WATER_TIMER_MANAGER,
+                 "[TIMER IS WATERING] timer_no: %d, duration_s_left: %lld",
+                 timer.timer_no, timer.duration_sec - secs_gone);
         return true;
     }
     return false;
