@@ -226,9 +226,9 @@ void GATTServer::GATTEventHandler(esp_gatts_cb_event_t event, esp_gatt_if_t gatt
         break;
     }
     case ESP_GATTS_READ_EVT: {
-        ESP_LOGI(GATTS_TAG, "GATT_READ_EVT, conn_id %d, trans_id %d, handle %d, is_long: %d, offset: %d\n",
-                 param->read.conn_id, param->read.trans_id, param->read.handle,
-                 param->read.is_long, param->read.offset);
+        // ESP_LOGI(GATTS_TAG, "GATT_READ_EVT, conn_id %d, trans_id %d, handle %d, is_long: %d, offset: %d\n",
+        //          param->read.conn_id, param->read.trans_id, param->read.handle,
+        //          param->read.is_long, param->read.offset);
 
         auto it = chars_.find(param->write.handle);
         assert(it != chars_.end());
@@ -286,10 +286,10 @@ void GATTServer::GATTEventHandler(esp_gatts_cb_event_t event, esp_gatt_if_t gatt
         break;
     }
     case ESP_GATTS_WRITE_EVT: {
-        ESP_LOGI(GATTS_TAG,
-                "GATT_WRITE_EVT, conn_id %d, trans_id %d, handle %d, value_len: %d, is_prep: %d, is_login_: %d",
-                param->write.conn_id, param->write.trans_id,
-                param->write.handle, param->write.len, param->write.is_prep, is_login_);
+        // ESP_LOGI(GATTS_TAG,
+        //         "GATT_WRITE_EVT, conn_id %d, trans_id %d, handle %d, value_len: %d, is_prep: %d, is_login_: %d",
+        //         param->write.conn_id, param->write.trans_id,
+        //         param->write.handle, param->write.len, param->write.is_prep, is_login_);
 
         auto cccd_it = cccds_.find(param->write.handle);
         if (cccd_it != cccds_.end()) {

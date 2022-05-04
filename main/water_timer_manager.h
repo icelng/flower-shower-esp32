@@ -87,7 +87,7 @@ class WaterTimerManager {
     static const uint16_t kCIDWaterSpeed = 0xFE03;
     static const uint16_t kCIDWaterMLPerSecond = 0xFE04;
 
-    static const size_t kSizeOfEncodedTimer = 18;
+    static const size_t kSizeOfEncodedTimer = 26;
 
     static constexpr float kDefaultWaterSpeed = 1;
     static constexpr float kDefaultWaterMLPerSecond = 1;

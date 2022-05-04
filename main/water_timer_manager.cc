@@ -216,6 +216,7 @@ void WaterTimerManager::UpdateAllTimersDuration() {
 void WaterTimerManager::ReloadAllTimers() {
     // just for avoiding the drift of timer
     MutexGuard g(mutex_.get());
+    ESP_LOGI(LOG_TAG_WATER_TIMER_MANAGER, "[RELOAD ALL WATER TIMERS START]");
     uint32_t num_timers = 0;
     for (auto& ctx : timer_ctxs_) {
         if (ctx.get() != nullptr) {
@@ -223,7 +224,7 @@ void WaterTimerManager::ReloadAllTimers() {
             DoSetupTimer(ctx.get());
         }
     }
-    ESP_LOGI(LOG_TAG_WATER_TIMER_MANAGER, "[RELOAD ALL WATER TIMERS] num timers: %d", num_timers);
+    ESP_LOGI(LOG_TAG_WATER_TIMER_MANAGER, "[RELOAD ALL WATER TIMERS END] num timers: %d", num_timers);
 }
 
 esp_err_t WaterTimerManager::SetupTimer(WaterTimer& timer) {
@@ -398,7 +399,7 @@ esp_err_t WaterTimerManager::ListTimers(std::vector<WaterTimer>* timers) {
 }
 
 esp_err_t WaterTimerManager::ListTimersEncoded(BufferPtr* buf, size_t* buf_len) {
-    /*|-num_timers(1)-|-timer_no(1)-|-wdays(1)-|-timestamp(8)-|-ml(4)-|-duration(4)-|*/
+    /*|-num_timers(1)-|-timer_no(1)-|-wdays(1)-|-timestamp(8)-|-ml(4)-|-duration(4)-|-stopped_until(8)-|*/
     MutexGuard g(mutex_.get());
 
     uint8_t num_timers = 0;
@@ -420,6 +421,7 @@ esp_err_t WaterTimerManager::ListTimersEncoded(BufferPtr* buf, size_t* buf_len) 
         memcpy(buf->get() + offset + 2, &timer.first_start_timestamp_s, 8);
         memcpy(buf->get() + offset + 10, &timer.volume_ml, 4);
         memcpy(buf->get() + offset + 14, &timer.duration_sec, 4);
+        memcpy(buf->get() + offset + 18, &ctx->stopped_until, 8);
         offset += kSizeOfEncodedTimer;
     }
 
