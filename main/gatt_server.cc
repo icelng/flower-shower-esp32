@@ -226,9 +226,9 @@ void GATTServer::GATTEventHandler(esp_gatts_cb_event_t event, esp_gatt_if_t gatt
         break;
     }
     case ESP_GATTS_READ_EVT: {
-        // ESP_LOGI(GATTS_TAG, "GATT_READ_EVT, conn_id %d, trans_id %d, handle %d, is_long: %d, offset: %d\n",
-        //          param->read.conn_id, param->read.trans_id, param->read.handle,
-        //          param->read.is_long, param->read.offset);
+        ESP_LOGI(GATTS_TAG, "GATT_READ_EVT, conn_id %d, trans_id %d, handle %d, is_long: %d, offset: %d\n",
+                 param->read.conn_id, param->read.trans_id, param->read.handle,
+                 param->read.is_long, param->read.offset);
 
         auto it = chars_.find(param->write.handle);
         assert(it != chars_.end());
@@ -250,14 +250,14 @@ void GATTServer::GATTEventHandler(esp_gatts_cb_event_t event, esp_gatt_if_t gatt
         auto* long_msg = &charateristic->read_long_msg;
         if (charateristic->read_long_msg.next_trans_id == param->read.trans_id && param->read.is_long) {
             auto buf = long_msg->read_buf.get();
-            size_t slice_size = std::min(long_msg->read_buf_size - long_msg->next_offset, kGATTMTU);
+            size_t slice_size = std::min(long_msg->read_buf_size - long_msg->next_offset, mtu_);
             assert(buf != nullptr);
 
             rsp.attr_value.handle = param->read.handle;
             rsp.attr_value.len = slice_size;
             memcpy(rsp.attr_value.value, &buf[charateristic->read_long_msg.next_offset], slice_size);
 
-            if (slice_size < kGATTMTU) {
+            if (slice_size < mtu_) {
                 long_msg->read_buf.reset();
             } else {
                 long_msg->next_trans_id++;
@@ -268,14 +268,14 @@ void GATTServer::GATTEventHandler(esp_gatts_cb_event_t event, esp_gatt_if_t gatt
             long_msg->read_buf_size = 0;
             charateristic->read_cb(&long_msg->read_buf, &long_msg->read_buf_size);
 
-            size_t slice_size = std::min(long_msg->read_buf_size, kGATTMTU);
+            size_t slice_size = std::min(long_msg->read_buf_size, mtu_);
             rsp.attr_value.handle = param->read.handle;
             rsp.attr_value.len = slice_size;
             memcpy(rsp.attr_value.value, long_msg->read_buf.get(), slice_size);
 
-            if (long_msg->read_buf_size > kGATTMTU) {
+            if (long_msg->read_buf_size > mtu_) {
                 long_msg->next_trans_id = (param->read.trans_id + 1);
-                long_msg->next_offset = kGATTMTU;
+                long_msg->next_offset = mtu_;
             } else {
                 long_msg->next_trans_id = param->read.trans_id;
             }
@@ -286,10 +286,10 @@ void GATTServer::GATTEventHandler(esp_gatts_cb_event_t event, esp_gatt_if_t gatt
         break;
     }
     case ESP_GATTS_WRITE_EVT: {
-        // ESP_LOGI(GATTS_TAG,
-        //         "GATT_WRITE_EVT, conn_id %d, trans_id %d, handle %d, value_len: %d, is_prep: %d, is_login_: %d",
-        //         param->write.conn_id, param->write.trans_id,
-        //         param->write.handle, param->write.len, param->write.is_prep, is_login_);
+        ESP_LOGI(GATTS_TAG,
+                "GATT_WRITE_EVT, conn_id %d, trans_id %d, handle %d, value_len: %d, is_prep: %d, is_login_: %d",
+                param->write.conn_id, param->write.trans_id,
+                param->write.handle, param->write.len, param->write.is_prep, is_login_);
 
         auto cccd_it = cccds_.find(param->write.handle);
         if (cccd_it != cccds_.end()) {
@@ -370,6 +370,7 @@ void GATTServer::GATTEventHandler(esp_gatts_cb_event_t event, esp_gatt_if_t gatt
     }
     case ESP_GATTS_MTU_EVT:
         ESP_LOGI(GATTS_TAG, "ESP_GATTS_MTU_EVT, MTU %d", param->mtu.mtu);
+        mtu_ = param->mtu.mtu;
         break;
     case ESP_GATTS_UNREG_EVT:
         break;
@@ -433,6 +434,7 @@ void GATTServer::GATTEventHandler(esp_gatts_cb_event_t event, esp_gatt_if_t gatt
                  param->connect.remote_bda[0], param->connect.remote_bda[1], param->connect.remote_bda[2],
                  param->connect.remote_bda[3], param->connect.remote_bda[4], param->connect.remote_bda[5]);
         conn_id_ = param->connect.conn_id;
+        mtu_ = kMinGATTMTU;
         //start sent the update connection parameters to the peer device.
         esp_ble_gap_update_conn_params(&conn_params);
         break;
@@ -658,11 +660,12 @@ esp_err_t GATTServer::Init() {
         return ret;
     }
 
-    ret = esp_ble_gatt_set_local_mtu(kGATTMTU + 1);
+    ret = esp_ble_gatt_set_local_mtu(kMaxGATTMTU);
     if (ret) {
         ESP_LOGE(GATTS_TAG, "set local  MTU failed, error code = %x", ret);
         return ret;
     }
+    mtu_ = kMinGATTMTU;
 
     ESP_LOGI(GATTS_TAG, "[INIT GATT SERVER SUCCESSFULLY] device_name: %s\n", device_name_.c_str());
 

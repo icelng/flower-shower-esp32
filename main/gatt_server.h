@@ -17,7 +17,8 @@
 
 namespace sd {
 
-const static size_t kGATTMTU = 22;
+const static size_t kMaxGATTMTU = 512;
+const static size_t kMinGATTMTU = 22;
 
 using char_read_cb = std::function<void(BufferPtr*, size_t*)>;
 using char_write_cb = std::function<void(uint16_t, uint8_t*, size_t)>;
@@ -100,6 +101,7 @@ class GATTServer {
     esp_gatts_cb_t gatts_cb_;
     uint16_t gatts_if_ = ESP_GATT_IF_NONE;
     uint16_t conn_id_;
+    size_t mtu_;
 
     // services
     std::vector<std::unique_ptr<struct Service>> services_;
