@@ -34,7 +34,7 @@ enum MotorTimerOP {
 };
 
 void hello_dream(void* arg) {
-    printf("Hello silicon dreams!!!\n");
+    ESP_LOGI(LOG_TAG_MAIN, "Happy Birthday to CC!");
 
     esp_pm_config_esp32_t pm_config = {.max_freq_mhz = 240, .min_freq_mhz = 40, .light_sleep_enable = true};
     ESP_ERROR_CHECK(esp_pm_configure(&pm_config));

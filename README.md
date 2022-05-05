@@ -1,2 +1,2 @@
-# Welcome to Silicon Dreams!
-The dream is creating...
+# Happy Birthday to CC!
+## 川神生日快乐！
