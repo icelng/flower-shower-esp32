@@ -437,12 +437,28 @@ void GATTServer::GATTEventHandler(esp_gatts_cb_event_t event, esp_gatt_if_t gatt
         mtu_ = kMinGATTMTU;
         //start sent the update connection parameters to the peer device.
         esp_ble_gap_update_conn_params(&conn_params);
+
+        {
+            MutexGuard g(conn_cbs_mutex_.get());
+            for (auto it = conn_cbs_.begin(); it != conn_cbs_.end(); it++) {
+                it->second(true);
+            }
+        }
+
         break;
     }
     case ESP_GATTS_DISCONNECT_EVT:
         ESP_LOGI(GATTS_TAG, "ESP_GATTS_DISCONNECT_EVT, disconnect reason 0x%x", param->disconnect.reason);
         is_login_ = false;
         esp_ble_gap_start_advertising(&adv_params_);
+
+        {
+            MutexGuard g(conn_cbs_mutex_.get());
+            for (auto it = conn_cbs_.begin(); it != conn_cbs_.end(); it++) {
+                it->second(false);
+            }
+        }
+
         break;
     case ESP_GATTS_CONF_EVT:
         ESP_LOGI(GATTS_TAG, "ESP_GATTS_CONF_EVT, status %d attr_handle %d", param->conf.status, param->conf.handle);
@@ -474,6 +490,7 @@ GATTServer* GATTServer::RegisterServer(ConfigManager* cfg_mgt) {
 
 GATTServer::GATTServer(ConfigManager* cfg_mgt) :
     app_id_(0),
+    conn_cbs_mutex_(std::make_unique<Mutex>()),
     cfg_mgt_(cfg_mgt) {
 
     adv_data_.set_scan_rsp = false;
@@ -574,6 +591,33 @@ esp_err_t GATTServer::AddCharateristic(uint8_t service_inst_id,
     if (char_handle != nullptr) {
         *char_handle = new_char_handle_;
     }
+
+    return ESP_OK;
+}
+
+esp_err_t GATTServer::RegisterConnectionStateChangeCb(uint32_t* reg_no, const conn_cb& cb) {
+    if (reg_no == nullptr) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    MutexGuard g(conn_cbs_mutex_.get());
+
+    *reg_no = conn_cbs_index_;
+    conn_cbs_index_++;
+    conn_cbs_.emplace(*reg_no, cb);
+
+    return ESP_OK;
+}
+
+esp_err_t GATTServer::UnregisterConnectionStateChangeCb(uint32_t reg_no) {
+    MutexGuard g(conn_cbs_mutex_.get());
+
+    auto it = conn_cbs_.find(reg_no);
+    if (it == conn_cbs_.end()) {
+        return ESP_ERR_NOT_FOUND;
+    }
+
+    conn_cbs_.erase(it);
 
     return ESP_OK;
 }

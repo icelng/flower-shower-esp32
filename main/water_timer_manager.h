@@ -61,11 +61,12 @@ class WaterTimerManager {
     void ReloadAllTimers();
     void StopTimerNow(uint8_t timer_no);
     static uint64_t CalcSecsToStart(const WaterTimer& timer);
-    static bool IsWatering(const WaterTimerCtx* ctx, uint64_t* duration_s_left);
+    bool IsTimerRunning(const WaterTimerCtx* ctx, uint64_t* duration_s_left);
     static void DecodeTimer(uint8_t* buf, WaterTimer* timer);
 
     ConfigManager* cfg_mgt_;
     GATTServer* gatt_server_;
+    uint32_t conn_cb_handle_;
     Motor* motor_;
     nvs_handle_t nvs_handle_;
     TimerHandle_t reload_timer_handle_ = nullptr;
@@ -74,6 +75,9 @@ class WaterTimerManager {
 
     float ml_per_sec_;
     float water_speed_;
+
+    // TODO(liang), atomic
+    bool is_cotrolled_forcelly_ = false;
 
     static const uint64_t kTimeZone = 8;
     static const uint64_t kSecsPerHour = 3600;

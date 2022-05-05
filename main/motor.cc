@@ -137,6 +137,8 @@ void Motor::TuneSpeedTask() {
 esp_err_t Motor::Start(float speed) {
     ESP_LOGI(LOG_TAG_MOTOR, "[START MOTOR] motor_name: %s, speed: %f\n", motor_name_.c_str(), speed);
 
+    xTimerStop(stop_timer_handle_, 0);
+
     speed_expected_ = speed;
     xEventGroupSetBits(event_group_, kEGSpeedChanged);
 

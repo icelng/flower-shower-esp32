@@ -23,6 +23,8 @@ WaterTimerManager::~WaterTimerManager() {
         xTimerDelete(ctx->timer_handle, 0);
         ctx.reset();
     }
+
+    gatt_server_->UnregisterConnectionStateChangeCb(conn_cb_handle_);
 }
 
 esp_err_t WaterTimerManager::Init() {
@@ -76,6 +78,14 @@ esp_err_t WaterTimerManager::Init() {
 esp_err_t WaterTimerManager::SetupGATTService() {
     assert(gatt_server_ != nullptr);
 
+    ESP_ERROR_CHECK(gatt_server_->RegisterConnectionStateChangeCb(&conn_cb_handle_, [&](bool is_connected) {
+                    if (!is_connected && is_cotrolled_forcelly_) {
+                        is_cotrolled_forcelly_ = false;
+                        motor_->Stop();
+                        ReloadAllTimers();
+                    }
+                }));
+
     uint8_t service_inst_id;
     ESP_ERROR_CHECK(gatt_server_->CreateService(kSIDWaterTimer, &service_inst_id));
 
@@ -94,6 +104,8 @@ esp_err_t WaterTimerManager::SetupGATTService() {
                     auto op = (WaterOP)*buf;
                     switch (op) {
                         case START: {
+                            MutexGuard g(mutex_.get());  // prevent reloading timer
+                            // TODO(liang), stop all timers here
                             if (len == 1) {
                                 motor_->Start(water_speed_);
                             } else if (len == 5){
@@ -101,11 +113,15 @@ esp_err_t WaterTimerManager::SetupGATTService() {
                                 motor_->Start(water_speed);
                             } else {
                                 ESP_LOGE(LOG_TAG_WATER_ADJUSTER, "Bad messge for op: %d\n", op);
+                                break;
                             }
+                            is_cotrolled_forcelly_ = true;
                             break;
                         }
                         case STOP:
                             motor_->Stop();
+                            is_cotrolled_forcelly_ = false;
+                            ReloadAllTimers();
                         break;
                         default:
                             ESP_LOGE(LOG_TAG_WATER_ADJUSTER, "Invalid water op: %d\n", op);
@@ -195,7 +211,7 @@ void WaterTimerManager::StopTimerNow(uint8_t timer_no) {
 
     auto* ctx = timer_ctxs_[timer_no].get();
     uint64_t secs_to_stop;
-    if (!IsWatering(ctx, &secs_to_stop)) return;
+    if (!IsTimerRunning(ctx, &secs_to_stop)) return;
     ctx->stopped_until = get_curtime_s() + secs_to_stop;
     motor_->Stop();
 
@@ -216,6 +232,10 @@ void WaterTimerManager::UpdateAllTimersDuration() {
 void WaterTimerManager::ReloadAllTimers() {
     // just for avoiding the drift of timer
     MutexGuard g(mutex_.get());
+
+    // motor is being controlled somewhere, timers can not be reloaded now.
+    if (is_cotrolled_forcelly_) return;
+
     ESP_LOGI(LOG_TAG_WATER_TIMER_MANAGER, "[RELOAD ALL WATER TIMERS START]");
     uint32_t num_timers = 0;
     for (auto& ctx : timer_ctxs_) {
@@ -244,7 +264,7 @@ esp_err_t WaterTimerManager::DoSetupTimer(WaterTimerCtx* ctx) {
     if (secs_to_start == UINT64_MAX) {
         if (ctx->timer_handle != nullptr) { assert(xTimerStop(ctx->timer_handle, 0)); }
         uint64_t duration_s_left;
-        if (IsWatering(ctx, &duration_s_left)) { motor_->Start(water_speed_, duration_s_left * 1000); }
+        if (IsTimerRunning(ctx, &duration_s_left)) { motor_->Start(water_speed_, duration_s_left * 1000); }
         return ESP_OK;
     }
     TickType_t ticks_to_start = secs_to_start * 1000 / portTICK_PERIOD_MS;
@@ -273,7 +293,7 @@ esp_err_t WaterTimerManager::DoSetupTimer(WaterTimerCtx* ctx) {
     }
 
     uint64_t duration_s_left = 0;
-    if (IsWatering(ctx, &duration_s_left)) {
+    if (IsTimerRunning(ctx, &duration_s_left)) {
         motor_->Start(water_speed_, duration_s_left * 1000);
     }
 
@@ -286,7 +306,7 @@ void WaterTimerManager::StartWaterOnTime(WaterTimerCtx* ctx) {
     ESP_LOGI(LOG_TAG_WATER_TIMER_MANAGER, "[TIME TO START WATER] timer_no: %d\n", timer.timer_no);
 
     uint64_t duration_sec = 0;
-    if (IsWatering(ctx, &duration_sec)) {
+    if (IsTimerRunning(ctx, &duration_sec)) {
         motor_->Start(water_speed_, duration_sec * 1000);
     }
 
@@ -458,7 +478,13 @@ uint64_t WaterTimerManager::CalcSecsToStart(const WaterTimer& timer) {
     return secs_to_start;
 }
 
-bool WaterTimerManager::IsWatering(const WaterTimerCtx* ctx, uint64_t* duration_s_left) {
+bool WaterTimerManager::IsTimerRunning(const WaterTimerCtx* ctx, uint64_t* duration_s_left) {
+    if (is_cotrolled_forcelly_) {
+        // motor is being controlled somewhere, timers can not be started now.
+        ESP_LOGI(LOG_TAG_WATER_TIMER_MANAGER, "[MOTOR IS BEGING CONTROLLED]");
+        return false;
+    }
+
     if (get_curtime_s() < ctx->stopped_until) {
         ESP_LOGI(LOG_TAG_WATER_TIMER_MANAGER,
                  "[TIMER IS STOPPED] timer_no: %d, until: %lld\n",

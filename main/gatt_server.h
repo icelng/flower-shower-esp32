@@ -22,6 +22,7 @@ const static size_t kMinGATTMTU = 22;
 
 using char_read_cb = std::function<void(BufferPtr*, size_t*)>;
 using char_write_cb = std::function<void(uint16_t, uint8_t*, size_t)>;
+using conn_cb = std::function<void(bool)>;
 
 static constexpr uint8_t kServiceUUID128[16] = {
     /* LSB <--------------------------------------------------------------------------------> MSB */
@@ -42,6 +43,8 @@ class GATTServer {
     esp_err_t StartAdvertising();
     esp_err_t StopAdvertising();
     esp_err_t Notify(uint16_t char_handle, uint8_t* buf, size_t buf_len);
+    esp_err_t RegisterConnectionStateChangeCb(uint32_t* reg_no, const conn_cb& cb);
+    esp_err_t UnregisterConnectionStateChangeCb(uint32_t reg_no);
 
     void GATTEventHandler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if, esp_ble_gatts_cb_param_t *param);
     void GAPEventHandler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param);
@@ -102,6 +105,9 @@ class GATTServer {
     uint16_t gatts_if_ = ESP_GATT_IF_NONE;
     uint16_t conn_id_;
     size_t mtu_;
+    std::unordered_map<uint32_t, conn_cb> conn_cbs_;
+    std::unique_ptr<Mutex> conn_cbs_mutex_;
+    uint32_t conn_cbs_index_ = 0;
 
     // services
     std::vector<std::unique_ptr<struct Service>> services_;
